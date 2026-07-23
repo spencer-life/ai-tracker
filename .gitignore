@@ -1,0 +1,35 @@
+# Binaries
+bin/
+ait
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# Databases
+*.db
+*.sqlite
+*.sqlite3
+data.db
+
+# OS Files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# IDEs
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Go Workspace
+go.work
+go.work.sum

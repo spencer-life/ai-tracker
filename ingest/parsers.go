@@ -54,7 +54,7 @@ func parseAntigravityLogs(db *sql.DB, dir string) {
 		scanner := bufio.NewScanner(file)
 		for scanner.Scan() {
 			var data map[string]interface{}
-			if err := json.Unmarshal(scanner.Bytes(), &data); err != nil {
+			if err := json.Unmarshal(RedactSecrets(scanner.Bytes()), &data); err != nil {
 				continue
 			}
 
@@ -83,7 +83,7 @@ func parseClaudeLogs(db *sql.DB, dir string) {
 
 		bytes, _ := io.ReadAll(file)
 		var data map[string]interface{}
-		if err := json.Unmarshal(bytes, &data); err == nil {
+		if err := json.Unmarshal(RedactSecrets(bytes), &data); err == nil {
 			inTokens, outTokens := extractTokenUsage(data)
 			if inTokens > 0 || outTokens > 0 {
 				cost := calculateCost("claude-3.5-sonnet", float64(inTokens), float64(outTokens))
@@ -108,7 +108,7 @@ func parseCodexLogs(db *sql.DB, dir string) {
 
 		bytes, _ := io.ReadAll(file)
 		var data map[string]interface{}
-		if err := json.Unmarshal(bytes, &data); err == nil {
+		if err := json.Unmarshal(RedactSecrets(bytes), &data); err == nil {
 			inTokens, outTokens := extractTokenUsage(data)
 			if inTokens > 0 || outTokens > 0 {
 				cost := calculateCost("claude-3.5-sonnet", float64(inTokens), float64(outTokens)) // Assuming Claude for Codex for now
