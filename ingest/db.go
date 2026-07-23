@@ -104,7 +104,12 @@ func (r *Repository) UpdateCursor(filepath string, offset int64) error {
 }
 
 func (r *Repository) InsertLog(agent, model string, timestamp time.Time, inTokens, outTokens int, cost float64, hash string) error {
-	query := `INSERT OR IGNORE INTO token_logs (agent, timestamp, model, input_tokens, output_tokens, cost, log_hash) VALUES (?, ?, ?, ?, ?, ?, ?)`
+	query := `INSERT INTO token_logs (agent, timestamp, model, input_tokens, output_tokens, cost, log_hash) 
+	          VALUES (?, ?, ?, ?, ?, ?, ?)
+	          ON CONFLICT(log_hash) DO UPDATE SET 
+	          input_tokens=excluded.input_tokens, 
+	          output_tokens=excluded.output_tokens, 
+	          cost=excluded.cost`
 	_, err := r.db.Exec(query, agent, timestamp, model, inTokens, outTokens, cost, hash)
 	return err
 }

@@ -209,13 +209,33 @@ func buildClaudeModelMap(dir string) map[string]string {
 }
 
 func parseCodexLogs(repo *Repository, dir string) {
-	filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
-		if err != nil || info.IsDir() || (!strings.HasSuffix(info.Name(), ".json") && !strings.HasSuffix(info.Name(), ".jsonl")) {
-			return nil
+	dbPath := filepath.Join(dir, "state_5.sqlite")
+	codexDb, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		return
+	}
+	defer codexDb.Close()
+
+	rows, err := codexDb.Query("SELECT id, COALESCE(model, 'codex-core-v1'), created_at, tokens_used FROM threads WHERE tokens_used > 0")
+	if err != nil {
+		return
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var id string
+		var model string
+		var createdAt int64
+		var tokensUsed int
+		if err := rows.Scan(&id, &model, &createdAt, &tokensUsed); err == nil {
+			ts := time.Unix(createdAt, 0)
+			inTokens := int(float64(tokensUsed) * 0.75)
+			outTokens := tokensUsed - inTokens
+			cost := CalculateCost(model, float64(inTokens), float64(outTokens))
+			hash := "codex-thread-" + id
+			repo.InsertLog("codex", model, ts, inTokens, outTokens, cost, hash)
 		}
-		processFile(repo, path, "codex", "codex-core-v1", nil)
-		return nil
-	})
+	}
 }
 
 func extractTokenUsage(data interface{}) (int, int) {
