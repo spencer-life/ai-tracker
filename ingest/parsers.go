@@ -67,6 +67,28 @@ func processFile(repo *Repository, path string, agent, defaultModel string) {
 		return
 	}
 
+	if strings.HasSuffix(path, ".json") {
+		content, err := os.ReadFile(path)
+		if err == nil {
+			var data map[string]interface{}
+			if err := json.Unmarshal(content, &data); err == nil {
+				hashBytes := sha256.Sum256(content)
+				hashStr := hex.EncodeToString(hashBytes[:])
+				model := extractModel(data, defaultModel)
+				ts := extractTimestamp(data)
+				inTokens, outTokens := extractTokenUsage(data)
+				if inTokens > 0 || outTokens > 0 {
+					cost := CalculateCost(model, float64(inTokens), float64(outTokens))
+					repo.InsertLog(agent, model, ts, inTokens, outTokens, cost, hashStr)
+				}
+			}
+		}
+		fileModTimesMu.Lock()
+		fileModTimes[path] = info.ModTime()
+		fileModTimesMu.Unlock()
+		return
+	}
+
 	file, err := os.Open(path)
 	if err != nil {
 		return
@@ -193,6 +215,11 @@ func extractTimestamp(data map[string]interface{}) time.Time {
 		}
 	}
 	if ts, ok := data["created_at"].(string); ok {
+		if t, err := time.Parse(time.RFC3339, ts); err == nil {
+			return t
+		}
+	}
+	if ts, ok := data["start_time"].(string); ok {
 		if t, err := time.Parse(time.RFC3339, ts); err == nil {
 			return t
 		}
