@@ -112,8 +112,8 @@ func StartServer(addr string, dbConn *sql.DB) error {
 		// Get totals
 		dbConn.QueryRow("SELECT COALESCE(SUM(input_tokens + output_tokens), 0), COALESCE(SUM(cost), 0) FROM token_logs").Scan(&resp.TotalTokens, &resp.TotalCost)
 		
-		// Get agents
-		rows, err := dbConn.Query("SELECT agent, model, SUM(input_tokens + output_tokens) FROM token_logs GROUP BY agent ORDER BY MAX(timestamp) DESC")
+		// Get agents and models
+		rows, err := dbConn.Query("SELECT agent, model, SUM(input_tokens + output_tokens) FROM token_logs GROUP BY agent, model ORDER BY MAX(timestamp) DESC LIMIT 20")
 		if err == nil {
 			defer rows.Close()
 			for rows.Next() {
