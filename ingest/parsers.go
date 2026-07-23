@@ -122,6 +122,9 @@ func processFile(repo *Repository, path string, agent, defaultModel string) {
 				model := extractModel(data, defaultModel)
 				ts := extractTimestamp(data)
 				inTokens, outTokens := extractTokenUsage(data)
+				if inTokens == 0 && outTokens == 0 && agent == "antigravity" {
+					inTokens, outTokens = estimateAntigravityTokens(data)
+				}
 				if inTokens > 0 || outTokens > 0 {
 					cost := CalculateCost(model, float64(inTokens), float64(outTokens))
 					repo.InsertLog(agent, model, ts, inTokens, outTokens, cost, hashStr)
@@ -205,6 +208,47 @@ func extractTokenUsage(data interface{}) (int, int) {
 			out += o
 		}
 	}
+	return in, out
+}
+
+func estimateAntigravityTokens(data map[string]interface{}) (int, int) {
+	in, out := 0, 0
+	source, _ := data["source"].(string)
+
+	strLen := func(key string) int {
+		if s, ok := data[key].(string); ok {
+			return len(s) / 4
+		}
+		return 0
+	}
+
+	tokens := strLen("content") + strLen("thinking")
+
+	if tc, ok := data["tool_calls"].([]interface{}); ok {
+		for _, call := range tc {
+			if c, ok := call.(map[string]interface{}); ok {
+				if args, ok := c["args"].(map[string]interface{}); ok {
+					for _, v := range args {
+						if s, ok := v.(string); ok {
+							tokens += len(s) / 4
+						}
+					}
+				}
+			}
+		}
+	}
+
+	// 1 token minimum if there's any content
+	if tokens == 0 && (data["content"] != nil || data["thinking"] != nil) {
+		tokens = 1
+	}
+
+	if source == "MODEL" {
+		out += tokens
+	} else {
+		in += tokens
+	}
+
 	return in, out
 }
 
