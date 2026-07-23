@@ -146,5 +146,5 @@ Designed with the **Catppuccin Frappe** color palette for optimal visual comfort
 
 ## 📄 License
 
-[MIT](LICENSE) © Spencer Schofield
+[MIT](LICENSE) © Innovative Business Solutions
 
