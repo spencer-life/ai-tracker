@@ -7,6 +7,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/spencer-life/ai-tracker/ingest"
 )
 
 // SubagentInfo represents an active or past agent execution context.
@@ -38,66 +39,79 @@ type Model struct {
 	connected     bool
 }
 
+func loadDataFromDB() (int64, float64, []SubagentInfo, []string) {
+    db, err := ingest.InitDB()
+    if err != nil {
+        return 0, 0, nil, []string{fmt.Sprintf("[ERROR] DB Init failed: %v", err)}
+    }
+    defer db.Close()
+
+    var totalTokens int64
+    var totalCost float64
+    var agents []SubagentInfo
+    var logs []string
+
+    rows, err := db.Query("SELECT agent, SUM(input_tokens + output_tokens), SUM(cost) FROM token_logs GROUP BY agent")
+    if err == nil {
+        for rows.Next() {
+            var name string
+            var tokens int64
+            var cost float64
+            if err := rows.Scan(&name, &tokens, &cost); err == nil {
+                totalTokens += tokens
+                totalCost += cost
+                agents = append(agents, SubagentInfo{
+                    Name: name,
+                    Tokens: tokens,
+                    Status: "IDLE",
+                    Task: "Aggregated from DB",
+                })
+            }
+        }
+        rows.Close()
+    } else {
+        logs = append(logs, fmt.Sprintf("[ERROR] DB Query failed: %v", err))
+    }
+    
+    logRows, err := db.Query("SELECT timestamp, agent, model, input_tokens, output_tokens FROM token_logs ORDER BY timestamp DESC LIMIT 10")
+    if err == nil {
+        for logRows.Next() {
+            var ts time.Time
+            var agent, model string
+            var inT, outT int
+            if err := logRows.Scan(&ts, &agent, &model, &inT, &outT); err == nil {
+                logs = append([]string{fmt.Sprintf("[%s] [%s] %s %d in %d out", ts.Format("15:04:05"), agent, model, inT, outT)}, logs...)
+            }
+        }
+        logRows.Close()
+    }
+
+    if len(agents) == 0 {
+        agents = append(agents, SubagentInfo{Name: "No agents found", Status: "IDLE"})
+    }
+    if len(logs) == 0 {
+        logs = append(logs, "[SYSTEM] Connected to SQLite DB (No logs found)")
+    } else {
+        logs = append(logs, "[SYSTEM] Connected to SQLite DB")
+    }
+
+    return totalTokens, totalCost, agents, logs
+}
+
 // NewModel creates a pre-populated Catppuccin Frappe TUI Model.
 func NewModel() Model {
+    tokens, cost, agents, logs := loadDataFromDB()
+
 	return Model{
 		activeTab: 0,
 		width:     80,
 		height:    24,
 		connected: true,
-		totalTokens: 4892150,
-		totalCost:   18.42,
-		avgLatency:  412,
-		agents: []SubagentInfo{
-			{
-				ID:        "conv-8f92a",
-				Name:      "Codebase Researcher",
-				Model:     "claude-3-7-sonnet",
-				Status:    "RUNNING",
-				Tokens:    142800,
-				LatencyMs: 380,
-				Duration:  "2m 14s",
-				Task:      "Parsing AST patterns and repository dependencies across 42 files",
-			},
-			{
-				ID:        "conv-3a17c",
-				Name:      "TUI Component Renderer",
-				Model:     "gemini-2.5-pro",
-				Status:    "RUNNING",
-				Tokens:    89400,
-				LatencyMs: 290,
-				Duration:  "1m 05s",
-				Task:      "Building Bubbletea views & Lipgloss Catppuccin color bindings",
-			},
-			{
-				ID:        "conv-92b4e",
-				Name:      "API Schema Validator",
-				Model:     "gpt-4o",
-				Status:    "QUEUED",
-				Tokens:    12100,
-				LatencyMs: 450,
-				Duration:  "12s",
-				Task:      "Validating WebSocket JSON telemetry schemas against Go structs",
-			},
-			{
-				ID:        "conv-11a9f",
-				Name:      "DB Migration Assister",
-				Model:     "claude-3-7-sonnet",
-				Status:    "RUNNING",
-				Tokens:    210400,
-				LatencyMs: 510,
-				Duration:  "4m 50s",
-				Task:      "Analyzing Postgres index performance for telemetry logs table",
-			},
-		},
-		logs: []string{
-			"[19:02:20] [SYSTEM] Telemetry engine initialized on port :8080 (Catppuccin Frappe mode)",
-			"[19:02:22] [AGENT:conv-8f92a] Tool call grep_search query='Bubbletea' path='/home/mlpc/dev/ai-tracker'",
-			"[19:02:24] [WEBSOCKET] Client subscriber connected from 127.0.0.1:49210",
-			"[19:02:25] [METRICS] Token usage sync completed: +3,420 tokens ($0.012 est.)",
-			"[19:02:28] [TUI] View state active tab set to [1: Overview]",
-			"[19:02:30] [AGENT:conv-3a17c] Lipgloss styles compiled with Catppuccin Frappe colors",
-		},
+		totalTokens: tokens,
+		totalCost:   cost,
+		avgLatency:  0,
+		agents: agents,
+		logs: logs,
 	}
 }
 
@@ -152,6 +166,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.selectedAgent--
 			}
 		case "r":
+			tokens, cost, agents, logs := loadDataFromDB()
+			m.totalTokens = tokens
+			m.totalCost = cost
+			m.agents = agents
+			m.logs = logs
 			m.logs = append(m.logs, fmt.Sprintf("[%s] [USER] Manual refresh triggered", time.Now().Format("15:04:05")))
 		}
 	}

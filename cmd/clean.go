@@ -19,7 +19,7 @@ var cleanCmd = &cobra.Command{
 		}
 		defer db.Close()
 
-		_, err = db.Exec("DELETE FROM token_logs")
+		_, err = db.Exec("DELETE FROM token_logs; VACUUM;")
 		if err != nil {
 			log.Fatalf("Failed to clear token_logs table: %v", err)
 		}

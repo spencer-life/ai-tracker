@@ -59,6 +59,7 @@ var exportCmd = &cobra.Command{
 				query += " AND timestamp <= ?"
 				queryArgs = append(queryArgs, t)
 			} else if t, err := time.Parse("2006-01-02", exportTo); err == nil {
+				t = t.Add(23*time.Hour + 59*time.Minute + 59*time.Second)
 				query += " AND timestamp <= ?"
 				queryArgs = append(queryArgs, t)
 			}
@@ -132,7 +133,6 @@ var exportCmd = &cobra.Command{
 				defer zipFile.Close()
 
 				zipWriter := zip.NewWriter(zipFile)
-				defer zipWriter.Close()
 
 				filename := "data.json"
 				if exportCsv {
@@ -141,13 +141,20 @@ var exportCmd = &cobra.Command{
 
 				f, err := zipWriter.Create(filename)
 				if err != nil {
+					zipWriter.Close()
 					fmt.Fprintf(os.Stderr, "Error creating zip entry: %v\n", err)
 					os.Exit(1)
 				}
 
 				_, err = f.Write(output)
 				if err != nil {
+					zipWriter.Close()
 					fmt.Fprintf(os.Stderr, "Error writing zip entry: %v\n", err)
+					os.Exit(1)
+				}
+				
+				if err := zipWriter.Close(); err != nil {
+					fmt.Fprintf(os.Stderr, "Error closing zip writer: %v\n", err)
 					os.Exit(1)
 				}
 			} else {

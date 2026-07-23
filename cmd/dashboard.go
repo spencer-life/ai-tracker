@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -10,18 +11,27 @@ import (
 
 	"github.com/spencer-life/ai-tracker/ingest"
 
-	"github.com/spf13/cobra"
 	"github.com/spencer-life/ai-tracker/web"
+	"github.com/spf13/cobra"
 )
 
 var dashboardPort string
 var dashboardHost string
 var dashboardOpen bool
+var db *sql.DB
 
 var dashboardCmd = &cobra.Command{
 	Use:   "dashboard",
 	Short: "Start the embedded AI Tracker Catppuccin Web Dashboard",
 	Run: func(cmd *cobra.Command, args []string) {
+		var err error
+		db, err = ingest.InitDB()
+		if err != nil {
+			fmt.Printf("Error initializing database: %v\n", err)
+			os.Exit(1)
+		}
+		defer db.Close()
+
 		http.Handle("/", http.FileServer(http.FS(web.FS)))
 		http.HandleFunc("/api/v1/telemetry", handleTelemetry)
 
@@ -47,12 +57,10 @@ var dashboardCmd = &cobra.Command{
 
 func handleTelemetry(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	db, err := ingest.InitDB()
-	if err != nil {
+	if db == nil {
 		http.Error(w, `{"error":"db_error"}`, http.StatusInternalServerError)
 		return
 	}
-	defer db.Close()
 
 	var totalTokens int
 	var estCost float64

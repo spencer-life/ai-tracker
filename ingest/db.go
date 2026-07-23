@@ -43,6 +43,7 @@ func InitDB() (*sql.DB, error) {
 		PRAGMA synchronous=NORMAL;
 	`)
 	if err != nil {
+		db.Close()
 		return nil, fmt.Errorf("failed to set pragmas: %v", err)
 	}
 
@@ -62,6 +63,7 @@ func InitDB() (*sql.DB, error) {
 	`
 	_, err = db.Exec(schema)
 	if err != nil {
+		db.Close()
 		return nil, fmt.Errorf("failed to create schema: %v", err)
 	}
 

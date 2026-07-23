@@ -14,6 +14,8 @@ import (
 	"time"
 )
 
+var fileModTimes = make(map[string]time.Time)
+
 func IngestLogs() error {
 	db, err := InitDB()
 	if err != nil {
@@ -47,6 +49,10 @@ func parseAntigravityLogs(db *sql.DB, dir string) {
 			return nil
 		}
 		
+		if info.ModTime().Equal(fileModTimes[path]) {
+			return nil
+		}
+
 		file, err := os.Open(path)
 		if err != nil {
 			return nil
@@ -55,7 +61,7 @@ func parseAntigravityLogs(db *sql.DB, dir string) {
 
 		scanner := bufio.NewScanner(file)
 		const maxCapacity = 50 * 1024 * 1024
-		buf := make([]byte, maxCapacity)
+		buf := make([]byte, 64*1024)
 		scanner.Buffer(buf, maxCapacity)
 
 		for scanner.Scan() {
@@ -75,6 +81,12 @@ func parseAntigravityLogs(db *sql.DB, dir string) {
 				insertLog(db, "antigravity", "gemini-1.5-pro", ts, inTokens, outTokens, cost, hashStr)
 			}
 		}
+		
+		if err := scanner.Err(); err != nil {
+			fmt.Printf("Error scanning file %s: %v\n", path, err)
+		}
+		
+		fileModTimes[path] = info.ModTime()
 		return nil
 	})
 }
@@ -85,13 +97,20 @@ func parseClaudeLogs(db *sql.DB, dir string) {
 			return nil
 		}
 
+		if info.ModTime().Equal(fileModTimes[path]) {
+			return nil
+		}
+
 		file, err := os.Open(path)
 		if err != nil {
 			return nil
 		}
 		defer file.Close()
 
-		bytes, _ := io.ReadAll(file)
+		bytes, err := io.ReadAll(file)
+		if err != nil {
+			return nil
+		}
 		hashBytes := sha256.Sum256(bytes)
 		hashStr := hex.EncodeToString(hashBytes[:])
 
@@ -104,6 +123,8 @@ func parseClaudeLogs(db *sql.DB, dir string) {
 				insertLog(db, "claude", "claude-3.5-sonnet", ts, inTokens, outTokens, cost, hashStr)
 			}
 		}
+		
+		fileModTimes[path] = info.ModTime()
 		return nil
 	})
 }
@@ -114,13 +135,20 @@ func parseCodexLogs(db *sql.DB, dir string) {
 			return nil
 		}
 
+		if info.ModTime().Equal(fileModTimes[path]) {
+			return nil
+		}
+
 		file, err := os.Open(path)
 		if err != nil {
 			return nil
 		}
 		defer file.Close()
 
-		bytes, _ := io.ReadAll(file)
+		bytes, err := io.ReadAll(file)
+		if err != nil {
+			return nil
+		}
 		hashBytes := sha256.Sum256(bytes)
 		hashStr := hex.EncodeToString(hashBytes[:])
 
@@ -133,6 +161,8 @@ func parseCodexLogs(db *sql.DB, dir string) {
 				insertLog(db, "codex", "claude-3.5-sonnet", ts, inTokens, outTokens, cost, hashStr)
 			}
 		}
+		
+		fileModTimes[path] = info.ModTime()
 		return nil
 	})
 }
@@ -168,7 +198,21 @@ func extractTokenUsage(data interface{}) (int, int) {
 				if num, ok := val.(float64); ok {
 					out = int(num)
 				}
+			} else if m, ok := val.(map[string]interface{}); ok {
+				i, o := extractTokenUsage(m)
+				if i > 0 { in = i }
+				if o > 0 { out = o }
+			} else if a, ok := val.([]interface{}); ok {
+				i, o := extractTokenUsage(a)
+				if i > 0 { in = i }
+				if o > 0 { out = o }
 			}
+		}
+	case []interface{}:
+		for _, item := range v {
+			i, o := extractTokenUsage(item)
+			if i > 0 { in = i }
+			if o > 0 { out = o }
 		}
 	}
 	return in, out

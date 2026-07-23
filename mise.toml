@@ -1,0 +1,23 @@
+[tools]
+go = "1.26.5"
+"golangci-lint" = "latest"
+
+[tasks.build]
+description = "Build the ai-tracker CLI"
+run = "go build -o bin/ai-tracker main.go"
+
+[tasks.test]
+description = "Run all tests"
+run = "go test ./..."
+
+[tasks.lint]
+description = "Run golangci-lint"
+run = "golangci-lint run"
+
+[tasks.run]
+description = "Run the application locally"
+run = "go run main.go"
+
+[tasks.clean]
+description = "Remove the bin directory"
+run = "rm -rf bin/"
