@@ -1,5 +1,6 @@
 # Binaries
 bin/
+main
 ait
 *.exe
 *.exe~
@@ -33,3 +34,9 @@ Thumbs.db
 # Go Workspace
 go.work
 go.work.sum
+
+# Repomix
+repomix-output.xml
+
+# GoReleaser
+dist/
