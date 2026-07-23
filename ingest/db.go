@@ -108,7 +108,7 @@ func (r *Repository) InsertLog(agent, model string, timestamp time.Time, inToken
 
 
 func (r *Repository) GetAgentStats() ([]db.AgentStats, error) {
-	rows, err := r.db.Query("SELECT agent, SUM(input_tokens), SUM(output_tokens), SUM(cost), COUNT(id) FROM token_logs GROUP BY agent")
+	rows, err := r.db.Query("SELECT agent, (SELECT model FROM token_logs WHERE agent = t.agent ORDER BY timestamp DESC LIMIT 1), SUM(input_tokens), SUM(output_tokens), SUM(cost), COUNT(id) FROM token_logs t GROUP BY agent")
 	if err != nil {
 		return nil, err
 	}
@@ -117,7 +117,11 @@ func (r *Repository) GetAgentStats() ([]db.AgentStats, error) {
 	var stats []db.AgentStats
 	for rows.Next() {
 		var s db.AgentStats
-		if err := rows.Scan(&s.Name, &s.InputTokens, &s.OutputTokens, &s.Cost, &s.Jobs); err == nil {
+		var model sql.NullString
+		if err := rows.Scan(&s.Name, &model, &s.InputTokens, &s.OutputTokens, &s.Cost, &s.Jobs); err == nil {
+			if model.Valid {
+				s.Model = model.String
+			}
 			stats = append(stats, s)
 		}
 	}

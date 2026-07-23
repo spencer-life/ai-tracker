@@ -17,6 +17,7 @@ type TokenLog struct {
 
 type AgentStats struct {
     Name        string
+    Model       string
     InputTokens int64
     OutputTokens int64
     Cost        float64

@@ -67,9 +67,10 @@ func loadDataCmd(repo db.Repository) tea.Cmd {
 				cost += s.Cost
 				agents = append(agents, SubagentInfo{
 					Name:   s.Name,
+					Model:  s.Model,
 					Tokens: s.InputTokens + s.OutputTokens,
-					Status: "IDLE",
-					Task:   "Aggregated from DB",
+					Status: "ACTIVE",
+					Task:   "Logged via Telemetry",
 				})
 			}
 		}

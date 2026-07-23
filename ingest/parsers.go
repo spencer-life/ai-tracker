@@ -123,7 +123,7 @@ func parseAntigravityLogs(repo *Repository, dir string) {
 		if err != nil || info.IsDir() || !strings.HasSuffix(info.Name(), "transcript.jsonl") {
 			return nil
 		}
-		processFile(repo, path, "antigravity", "gemini-1.5-pro")
+		processFile(repo, path, "antigravity", "gemini-3.1-pro")
 		return nil
 	})
 }
@@ -133,7 +133,7 @@ func parseClaudeLogs(repo *Repository, dir string) {
 		if err != nil || info.IsDir() || (!strings.HasSuffix(info.Name(), ".json") && !strings.HasSuffix(info.Name(), ".jsonl")) {
 			return nil
 		}
-		processFile(repo, path, "claude", "claude-3.5-sonnet")
+		processFile(repo, path, "claude", "claude-5-sonnet")
 		return nil
 	})
 }
@@ -143,7 +143,7 @@ func parseCodexLogs(repo *Repository, dir string) {
 		if err != nil || info.IsDir() || (!strings.HasSuffix(info.Name(), ".json") && !strings.HasSuffix(info.Name(), ".jsonl")) {
 			return nil
 		}
-		processFile(repo, path, "codex", "claude-3.5-sonnet")
+		processFile(repo, path, "codex", "claude-5-sonnet")
 		return nil
 	})
 }
