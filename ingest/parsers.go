@@ -54,7 +54,7 @@ func extractModel(data map[string]interface{}, defaultModel string) string {
 	return defaultModel
 }
 
-func processFile(repo *Repository, path string, agent, defaultModel string) {
+func processFile(repo *Repository, path string, agent, defaultModel string, modelMap map[string]string) {
 	fileModTimesMu.RLock()
 	lastMod, exists := fileModTimes[path]
 	fileModTimesMu.RUnlock()
@@ -75,6 +75,13 @@ func processFile(repo *Repository, path string, agent, defaultModel string) {
 				hashBytes := sha256.Sum256(content)
 				hashStr := hex.EncodeToString(hashBytes[:])
 				model := extractModel(data, defaultModel)
+				if modelMap != nil {
+					if sid, ok := data["session_id"].(string); ok {
+						if m, exists := modelMap[sid]; exists {
+							model = m
+						}
+					}
+				}
 				ts := extractTimestamp(data)
 				inTokens, outTokens := extractTokenUsage(data)
 				if inTokens > 0 || outTokens > 0 {
@@ -120,6 +127,13 @@ func processFile(repo *Repository, path string, agent, defaultModel string) {
 			if errUnmarshal := json.Unmarshal(line, &data); errUnmarshal == nil {
 				// redactMap removed because text is not saved
 				model := extractModel(data, defaultModel)
+				if modelMap != nil {
+					if sid, ok := data["session_id"].(string); ok {
+						if m, exists := modelMap[sid]; exists {
+							model = m
+						}
+					}
+				}
 				ts := extractTimestamp(data)
 				inTokens, outTokens := extractTokenUsage(data)
 				if inTokens == 0 && outTokens == 0 && agent == "antigravity" {
@@ -148,19 +162,50 @@ func parseAntigravityLogs(repo *Repository, dir string) {
 		if err != nil || info.IsDir() || !strings.HasSuffix(info.Name(), "transcript.jsonl") {
 			return nil
 		}
-		processFile(repo, path, "antigravity", "gemini-3.1-pro")
+		processFile(repo, path, "antigravity", "gemini-3.1-pro", nil)
 		return nil
 	})
 }
 
 func parseClaudeLogs(repo *Repository, dir string) {
+	modelMap := buildClaudeModelMap(dir)
 	filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
 		if err != nil || info.IsDir() || (!strings.HasSuffix(info.Name(), ".json") && !strings.HasSuffix(info.Name(), ".jsonl")) {
 			return nil
 		}
-		processFile(repo, path, "claude", "claude-5-sonnet")
+		processFile(repo, path, "claude", "claude-5-sonnet", modelMap)
 		return nil
 	})
+}
+
+func buildClaudeModelMap(dir string) map[string]string {
+	m := make(map[string]string)
+	jobsDir := filepath.Join(dir, "jobs")
+	filepath.Walk(jobsDir, func(path string, info os.FileInfo, err error) error {
+		if err == nil && !info.IsDir() && info.Name() == "state.json" {
+			content, err := os.ReadFile(path)
+			if err == nil {
+				var data map[string]interface{}
+				if json.Unmarshal(content, &data) == nil {
+					sid, _ := data["sessionId"].(string)
+					if flags, ok := data["respawnFlags"].([]interface{}); ok {
+						for i, v := range flags {
+							if s, ok := v.(string); ok && s == "--model" && i+1 < len(flags) {
+								if mName, ok := flags[i+1].(string); ok {
+									if idx := strings.Index(mName, "["); idx != -1 {
+										mName = mName[:idx]
+									}
+									m[sid] = mName
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+		return nil
+	})
+	return m
 }
 
 func parseCodexLogs(repo *Repository, dir string) {
@@ -168,7 +213,7 @@ func parseCodexLogs(repo *Repository, dir string) {
 		if err != nil || info.IsDir() || (!strings.HasSuffix(info.Name(), ".json") && !strings.HasSuffix(info.Name(), ".jsonl")) {
 			return nil
 		}
-		processFile(repo, path, "codex", "codex-core-v1")
+		processFile(repo, path, "codex", "codex-core-v1", nil)
 		return nil
 	})
 }
