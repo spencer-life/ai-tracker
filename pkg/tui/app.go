@@ -34,31 +34,42 @@ type Model struct {
 	logs          []string
 	selectedAgent int
 	totalTokens   int64
+	totalIn       int64
+	totalOut      int64
+	totalJobs     int64
 	totalCost     float64
 	avgLatency    int
 	connected     bool
 }
 
-func loadDataFromDB() (int64, float64, []SubagentInfo, []string) {
+func loadDataFromDB() (int64, int64, int64, int64, float64, []SubagentInfo, []string) {
     db, err := ingest.InitDB()
     if err != nil {
-        return 0, 0, nil, []string{fmt.Sprintf("[ERROR] DB Init failed: %v", err)}
+        return 0, 0, 0, 0, 0, nil, []string{fmt.Sprintf("[ERROR] DB Init failed: %v", err)}
     }
     defer db.Close()
 
+    var totalIn int64
+    var totalOut int64
+    var totalJobs int64
     var totalTokens int64
     var totalCost float64
     var agents []SubagentInfo
     var logs []string
 
-    rows, err := db.Query("SELECT agent, SUM(input_tokens + output_tokens), SUM(cost) FROM token_logs GROUP BY agent")
+    rows, err := db.Query("SELECT agent, SUM(input_tokens), SUM(output_tokens), SUM(cost), COUNT(*) FROM token_logs GROUP BY agent")
     if err == nil {
         for rows.Next() {
             var name string
-            var tokens int64
+            var inT, outT int64
             var cost float64
-            if err := rows.Scan(&name, &tokens, &cost); err == nil {
+            var count int64
+            if err := rows.Scan(&name, &inT, &outT, &cost, &count); err == nil {
+                tokens := inT + outT
                 totalTokens += tokens
+                totalIn += inT
+                totalOut += outT
+                totalJobs += count
                 totalCost += cost
                 agents = append(agents, SubagentInfo{
                     Name: name,
@@ -95,12 +106,12 @@ func loadDataFromDB() (int64, float64, []SubagentInfo, []string) {
         logs = append(logs, "[SYSTEM] Connected to SQLite DB")
     }
 
-    return totalTokens, totalCost, agents, logs
+    return totalTokens, totalIn, totalOut, totalJobs, totalCost, agents, logs
 }
 
 // NewModel creates a pre-populated Catppuccin Frappe TUI Model.
 func NewModel() Model {
-    tokens, cost, agents, logs := loadDataFromDB()
+    tokens, inT, outT, jobs, cost, agents, logs := loadDataFromDB()
 
 	return Model{
 		activeTab: 0,
@@ -108,6 +119,9 @@ func NewModel() Model {
 		height:    24,
 		connected: true,
 		totalTokens: tokens,
+		totalIn:     inT,
+		totalOut:    outT,
+		totalJobs:   jobs,
 		totalCost:   cost,
 		avgLatency:  0,
 		agents: agents,
@@ -134,7 +148,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 
 	case TickMsg:
-		m.totalTokens += int64(120 + time.Now().Second()*5)
+		
 		m.logs = append(m.logs, fmt.Sprintf("[%s] [WEBSOCKET] Telemetry sync heartbeat OK", time.Now().Format("15:04:05")))
 		if len(m.logs) > 50 {
 			m.logs = m.logs[1:]
@@ -166,8 +180,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.selectedAgent--
 			}
 		case "r":
-			tokens, cost, agents, logs := loadDataFromDB()
+			tokens, inT, outT, jobs, cost, agents, logs := loadDataFromDB()
 			m.totalTokens = tokens
+			m.totalIn = inT
+			m.totalOut = outT
+			m.totalJobs = jobs
 			m.totalCost = cost
 			m.agents = agents
 			m.logs = logs
@@ -227,19 +244,19 @@ func (m Model) renderOverviewTab() string {
 	kpi1 := CardStyle.Render(fmt.Sprintf("%s\n%s\n%s",
 		MetricLabelStyle.Render("TOTAL TOKENS"),
 		MetricValStyle.Render(fmt.Sprintf("%d", m.totalTokens)),
-		lipgloss.NewStyle().Foreground(ColorOverlay1).Render("Prompt: 3.1M | Comp: 1.7M"),
+		lipgloss.NewStyle().Foreground(ColorOverlay1).Render(fmt.Sprintf("Prompt: %.1fK | Comp: %.1fK", float64(m.totalIn)/1000, float64(m.totalOut)/1000)),
 	))
 
 	kpi2 := CardStyle.Render(fmt.Sprintf("%s\n%s\n%s",
 		MetricLabelStyle.Render("EST. COST"),
 		lipgloss.NewStyle().Foreground(ColorPeach).Bold(true).Render(fmt.Sprintf("$%.2f", m.totalCost)),
-		lipgloss.NewStyle().Foreground(ColorOverlay1).Render("Avg: $0.0037 / req"),
+		lipgloss.NewStyle().Foreground(ColorOverlay1).Render(fmt.Sprintf("Avg: $%.4f / req", func() float64 { if m.totalJobs == 0 { return 0 }; return m.totalCost/float64(m.totalJobs) }())),
 	))
 
 	kpi3 := CardStyle.Render(fmt.Sprintf("%s\n%s\n%s",
 		MetricLabelStyle.Render("ACTIVE AGENTS"),
 		lipgloss.NewStyle().Foreground(ColorBlue).Bold(true).Render(fmt.Sprintf("%d Running", len(m.agents))),
-		lipgloss.NewStyle().Foreground(ColorOverlay1).Render("12 Total Jobs Executed"),
+		lipgloss.NewStyle().Foreground(ColorOverlay1).Render(fmt.Sprintf("%d Total Jobs Executed", m.totalJobs)),
 	))
 
 	kpi4 := CardStyle.Render(fmt.Sprintf("%s\n%s\n%s",
@@ -252,9 +269,9 @@ func (m Model) renderOverviewTab() string {
 
 	// Distribution breakdown
 	distTitle := HeaderStyle.Render("Model Cost & Usage Breakdown:")
-	anthropicBar := lipgloss.NewStyle().Foreground(ColorMauve).Render("■ Anthropic (Claude 3.7): 65% ($11.97)")
-	openaiBar := lipgloss.NewStyle().Foreground(ColorTeal).Render("■ OpenAI (GPT-4o):       23% ($4.23)")
-	googleBar := lipgloss.NewStyle().Foreground(ColorBlue).Render("■ Google (Gemini 2.5):    12% ($2.22)")
+	anthropicBar := lipgloss.NewStyle().Foreground(ColorMauve).Render("■ Real data collected for active agents")
+	openaiBar := lipgloss.NewStyle().Foreground(ColorTeal).Render("")
+	googleBar := lipgloss.NewStyle().Foreground(ColorBlue).Render("")
 
 	distBox := CardStyle.Render(fmt.Sprintf("%s\n\n%s\n%s\n%s", distTitle, anthropicBar, openaiBar, googleBar))
 

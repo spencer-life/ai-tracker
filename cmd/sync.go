@@ -18,7 +18,12 @@ var syncCmd = &cobra.Command{
 		for {
 			fmt.Println("Running sync...")
 			if err := ingest.IngestLogs(); err != nil {
-				log.Fatalf("Sync failed: %v", err)
+				log.Printf("Sync failed: %v", err)
+				if !syncWatch {
+					break
+				}
+				time.Sleep(5 * time.Second)
+				continue
 			}
 			fmt.Println("Sync complete!")
 			if !syncWatch {
