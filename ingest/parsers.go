@@ -19,12 +19,8 @@ var (
 	fileModTimes   = make(map[string]time.Time)
 )
 
-func IngestLogs() error {
-	db, err := InitDB()
-	if err != nil {
-		return err
-	}
-	defer db.Close()
+func IngestLogs(db *sql.DB) error {
+	repo := NewRepository(db)
 
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -33,15 +29,15 @@ func IngestLogs() error {
 
 	agDir := filepath.Join(home, ".gemini", "antigravity-cli", "brain")
 	fmt.Printf("Parsing %s logs...\n", agDir)
-	parseAntigravityLogs(db, agDir)
+	parseAntigravityLogs(repo, agDir)
 
 	claudeDir := filepath.Join(home, ".claude")
 	fmt.Printf("Parsing %s logs...\n", claudeDir)
-	parseClaudeLogs(db, claudeDir)
+	parseClaudeLogs(repo, claudeDir)
 
 	codexDir := filepath.Join(home, ".codex")
 	fmt.Printf("Parsing %s logs...\n", codexDir)
-	parseCodexLogs(db, codexDir)
+	parseCodexLogs(repo, codexDir)
 
 	return nil
 }
@@ -58,161 +54,96 @@ func extractModel(data map[string]interface{}, defaultModel string) string {
 	return defaultModel
 }
 
-func parseAntigravityLogs(db *sql.DB, dir string) {
+func processFile(repo *Repository, path string, agent, defaultModel string) {
+	fileModTimesMu.RLock()
+	lastMod, exists := fileModTimes[path]
+	fileModTimesMu.RUnlock()
+
+	info, err := os.Stat(path)
+	if err != nil {
+		return
+	}
+	if exists && info.ModTime().Equal(lastMod) {
+		return
+	}
+
+	file, err := os.Open(path)
+	if err != nil {
+		return
+	}
+	defer file.Close()
+
+	offset := repo.GetCursor(path)
+	if info.Size() < offset {
+		offset = 0
+	}
+	_, err = file.Seek(offset, 0)
+	if err != nil {
+		return
+	}
+
+	reader := bufio.NewReader(file)
+	for {
+		line, err := reader.ReadBytes('\n')
+		if len(line) > 0 {
+			if line[len(line)-1] != '\n' {
+				// Partial line, wait for next sync
+				break
+			}
+			offset += int64(len(line))
+			hashBytes := sha256.Sum256(line)
+			hashStr := hex.EncodeToString(hashBytes[:])
+
+			var data map[string]interface{}
+			if errUnmarshal := json.Unmarshal(line, &data); errUnmarshal == nil {
+				// redactMap removed because text is not saved
+				model := extractModel(data, defaultModel)
+				ts := extractTimestamp(data)
+				inTokens, outTokens := extractTokenUsage(data)
+				if inTokens > 0 || outTokens > 0 {
+					cost := CalculateCost(model, float64(inTokens), float64(outTokens))
+					repo.InsertLog(agent, model, ts, inTokens, outTokens, cost, hashStr)
+				}
+			}
+		}
+		if err != nil {
+			break
+		}
+	}
+
+	repo.UpdateCursor(path, offset)
+
+	fileModTimesMu.Lock()
+	fileModTimes[path] = info.ModTime()
+	fileModTimesMu.Unlock()
+}
+
+func parseAntigravityLogs(repo *Repository, dir string) {
 	filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
 		if err != nil || info.IsDir() || !strings.HasSuffix(info.Name(), "transcript.jsonl") {
 			return nil
 		}
-		
-		fileModTimesMu.RLock()
-		lastMod, exists := fileModTimes[path]
-		fileModTimesMu.RUnlock()
-		if exists && info.ModTime().Equal(lastMod) {
-			return nil
-		}
-
-		file, err := os.Open(path)
-		if err != nil {
-			return nil
-		}
-		defer file.Close()
-
-		scanner := bufio.NewScanner(file)
-		const maxCapacity = 50 * 1024 * 1024
-		buf := make([]byte, 64*1024)
-		scanner.Buffer(buf, maxCapacity)
-
-		for scanner.Scan() {
-			raw := scanner.Bytes()
-			hashBytes := sha256.Sum256(raw)
-			hashStr := hex.EncodeToString(hashBytes[:])
-
-			var data map[string]interface{}
-			if err := json.Unmarshal(RedactSecrets(raw), &data); err != nil {
-				continue
-			}
-
-			model := extractModel(data, "gemini-3.1-pro")
-			ts := extractTimestamp(data)
-			inTokens, outTokens := extractTokenUsage(data)
-			if inTokens > 0 || outTokens > 0 {
-				cost := calculateCost(model, float64(inTokens), float64(outTokens))
-				insertLog(db, "antigravity", model, ts, inTokens, outTokens, cost, hashStr)
-			}
-		}
-		
-		if err := scanner.Err(); err != nil {
-			fmt.Printf("Error scanning file %s: %v\n", path, err)
-		} else {
-			fileModTimesMu.Lock()
-			fileModTimes[path] = info.ModTime()
-			fileModTimesMu.Unlock()
-		}
-		
+		processFile(repo, path, "antigravity", "gemini-1.5-pro")
 		return nil
 	})
 }
 
-func parseClaudeLogs(db *sql.DB, dir string) {
+func parseClaudeLogs(repo *Repository, dir string) {
 	filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
-		if err != nil || info.IsDir() || !strings.HasSuffix(info.Name(), ".json") {
+		if err != nil || info.IsDir() || (!strings.HasSuffix(info.Name(), ".json") && !strings.HasSuffix(info.Name(), ".jsonl")) {
 			return nil
 		}
-
-		fileModTimesMu.RLock()
-		lastMod, exists := fileModTimes[path]
-		fileModTimesMu.RUnlock()
-		if exists && info.ModTime().Equal(lastMod) {
-			return nil
-		}
-
-		file, err := os.Open(path)
-		if err != nil {
-			return nil
-		}
-		defer file.Close()
-
-		scanner := bufio.NewScanner(file)
-		const maxCapacity = 50 * 1024 * 1024
-		buf := make([]byte, 64*1024)
-		scanner.Buffer(buf, maxCapacity)
-
-		for scanner.Scan() {
-			raw := scanner.Bytes()
-			hashBytes := sha256.Sum256(raw)
-			hashStr := hex.EncodeToString(hashBytes[:])
-
-			var data map[string]interface{}
-			if err := json.Unmarshal(RedactSecrets(raw), &data); err == nil {
-				model := extractModel(data, "claude-5-sonnet")
-				ts := extractTimestamp(data)
-				inTokens, outTokens := extractTokenUsage(data)
-				if inTokens > 0 || outTokens > 0 {
-					cost := calculateCost(model, float64(inTokens), float64(outTokens))
-					insertLog(db, "claude", model, ts, inTokens, outTokens, cost, hashStr)
-				}
-			}
-		}
-		
-		if err := scanner.Err(); err != nil {
-			fmt.Printf("Error scanning file %s: %v\n", path, err)
-		} else {
-			fileModTimesMu.Lock()
-			fileModTimes[path] = info.ModTime()
-			fileModTimesMu.Unlock()
-		}
+		processFile(repo, path, "claude", "claude-3.5-sonnet")
 		return nil
 	})
 }
 
-func parseCodexLogs(db *sql.DB, dir string) {
+func parseCodexLogs(repo *Repository, dir string) {
 	filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
-		if err != nil || info.IsDir() || !strings.HasSuffix(info.Name(), ".json") {
+		if err != nil || info.IsDir() || (!strings.HasSuffix(info.Name(), ".json") && !strings.HasSuffix(info.Name(), ".jsonl")) {
 			return nil
 		}
-
-		fileModTimesMu.RLock()
-		lastMod, exists := fileModTimes[path]
-		fileModTimesMu.RUnlock()
-		if exists && info.ModTime().Equal(lastMod) {
-			return nil
-		}
-
-		file, err := os.Open(path)
-		if err != nil {
-			return nil
-		}
-		defer file.Close()
-
-		scanner := bufio.NewScanner(file)
-		const maxCapacity = 50 * 1024 * 1024
-		buf := make([]byte, 64*1024)
-		scanner.Buffer(buf, maxCapacity)
-
-		for scanner.Scan() {
-			raw := scanner.Bytes()
-			hashBytes := sha256.Sum256(raw)
-			hashStr := hex.EncodeToString(hashBytes[:])
-
-			var data map[string]interface{}
-			if err := json.Unmarshal(RedactSecrets(raw), &data); err == nil {
-				model := extractModel(data, "claude-5-sonnet") // Assuming Claude for Codex for now
-				ts := extractTimestamp(data)
-				inTokens, outTokens := extractTokenUsage(data)
-				if inTokens > 0 || outTokens > 0 {
-					cost := calculateCost(model, float64(inTokens), float64(outTokens))
-					insertLog(db, "codex", model, ts, inTokens, outTokens, cost, hashStr)
-				}
-			}
-		}
-		
-		if err := scanner.Err(); err != nil {
-			fmt.Printf("Error scanning file %s: %v\n", path, err)
-		} else {
-			fileModTimesMu.Lock()
-			fileModTimes[path] = info.ModTime()
-			fileModTimesMu.Unlock()
-		}
+		processFile(repo, path, "codex", "claude-3.5-sonnet")
 		return nil
 	})
 }
@@ -221,50 +152,35 @@ func extractTokenUsage(data interface{}) (int, int) {
 	in, out := 0, 0
 	switch v := data.(type) {
 	case map[string]interface{}:
-		for key, val := range v {
-			if strings.ToLower(key) == "usage" || strings.ToLower(key) == "token_usage" || strings.ToLower(key) == "metadata" {
-				if usageMap, ok := val.(map[string]interface{}); ok {
-					i, o := extractTokenUsage(usageMap)
-					if i > 0 || o > 0 {
-						in += i
-						out += o
-						continue
-					}
-				}
-			}
-			
-			keyLower := strings.ToLower(key)
-			if strings.Contains(keyLower, "input") && strings.Contains(keyLower, "token") {
-				if num, ok := val.(float64); ok {
-					in += int(num)
-				}
-			} else if strings.Contains(keyLower, "prompt") && strings.Contains(keyLower, "token") {
-				if num, ok := val.(float64); ok {
-					in += int(num)
-				}
-			} else if strings.Contains(keyLower, "output") && strings.Contains(keyLower, "token") {
-				if num, ok := val.(float64); ok {
-					out += int(num)
-				}
-			} else if strings.Contains(keyLower, "completion") && strings.Contains(keyLower, "token") {
-				if num, ok := val.(float64); ok {
-					out += int(num)
-				}
-			} else if m, ok := val.(map[string]interface{}); ok {
-				i, o := extractTokenUsage(m)
-				if i > 0 { in += i }
-				if o > 0 { out += o }
+		if val, ok := v["input_tokens"].(float64); ok {
+			in += int(val)
+		} else if val, ok := v["prompt_tokens"].(float64); ok {
+			in += int(val)
+		}
+
+		if val, ok := v["output_tokens"].(float64); ok {
+			out += int(val)
+		} else if val, ok := v["completion_tokens"].(float64); ok {
+			out += int(val)
+		}
+
+		// Recurse into objects
+		for _, val := range v {
+			if a, ok := val.(map[string]interface{}); ok {
+				i, o := extractTokenUsage(a)
+				in += i
+				out += o
 			} else if a, ok := val.([]interface{}); ok {
 				i, o := extractTokenUsage(a)
-				if i > 0 { in += i }
-				if o > 0 { out += o }
+				in += i
+				out += o
 			}
 		}
 	case []interface{}:
 		for _, item := range v {
 			i, o := extractTokenUsage(item)
-			if i > 0 { in += i }
-			if o > 0 { out += o }
+			in += i
+			out += o
 		}
 	}
 	return in, out
@@ -284,30 +200,3 @@ func extractTimestamp(data map[string]interface{}) time.Time {
 	return time.Now()
 }
 
-func calculateCost(model string, inTokens, outTokens float64) float64 {
-	inCostPerM := 3.0
-	outCostPerM := 10.0
-
-	switch model {
-	case "gemini-3.1-pro", "gemini-1.5-pro":
-		inCostPerM, outCostPerM = 3.5, 10.5
-	case "gemini-3.6-flash":
-		inCostPerM, outCostPerM = 0.5, 1.5
-	case "claude-5-sonnet", "claude-3.5-sonnet":
-		inCostPerM, outCostPerM = 3.0, 15.0
-	case "claude-4.8-opus":
-		inCostPerM, outCostPerM = 15.0, 75.0
-	case "fable-5", "sol-5.6", "terra-5.6":
-		inCostPerM, outCostPerM = 2.0, 8.0
-	}
-
-	return (inTokens * inCostPerM / 1000000.0) + (outTokens * outCostPerM / 1000000.0)
-}
-
-func insertLog(db *sql.DB, agent, model string, timestamp time.Time, inTokens, outTokens int, cost float64, hash string) {
-	query := `INSERT OR IGNORE INTO token_logs (agent, timestamp, model, input_tokens, output_tokens, cost, log_hash) VALUES (?, ?, ?, ?, ?, ?, ?)`
-	_, err := db.Exec(query, agent, timestamp, model, inTokens, outTokens, cost, hash)
-	if err != nil {
-		fmt.Printf("Error inserting log: %v\n", err)
-	}
-}

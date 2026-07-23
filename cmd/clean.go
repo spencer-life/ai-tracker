@@ -13,13 +13,14 @@ var cleanCmd = &cobra.Command{
 	Short: "Safely wipe the telemetry database tables",
 	Run: func(cmd *cobra.Command, args []string) {
 		fmt.Println("Cleaning database...")
-		db, err := ingest.InitDB()
+		dbConn, err := ingest.InitDB()
+		repo := ingest.NewRepository(dbConn)
 		if err != nil {
 			log.Fatalf("Failed to open DB: %v", err)
 		}
-		defer db.Close()
+		defer dbConn.Close()
 
-		_, err = db.Exec("DELETE FROM token_logs; VACUUM;")
+		_, err = repo.GetDB().Exec("DELETE FROM token_logs; VACUUM;")
 		if err != nil {
 			log.Fatalf("Failed to clear token_logs table: %v", err)
 		}

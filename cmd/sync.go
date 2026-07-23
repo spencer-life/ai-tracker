@@ -15,9 +15,17 @@ var syncCmd = &cobra.Command{
 	Use:   "sync",
 	Short: "Sync logs and update the SQLite database",
 	Run: func(cmd *cobra.Command, args []string) {
+		dbConn, err := ingest.InitDB()
+		
+		if err != nil {
+			log.Fatalf("Failed to init db: %v", err)
+		}
+		
+		defer dbConn.Close()
+
 		for {
 			fmt.Println("Running sync...")
-			if err := ingest.IngestLogs(); err != nil {
+			if err := ingest.IngestLogs(dbConn); err != nil {
 				log.Printf("Sync failed: %v", err)
 				if !syncWatch {
 					break

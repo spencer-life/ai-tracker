@@ -7,10 +7,10 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/spencer-life/ai-tracker/internal/db"
 	"github.com/spencer-life/ai-tracker/ingest"
 )
 
-// SubagentInfo represents an active or past agent execution context.
 type SubagentInfo struct {
 	ID        string
 	Name      string
@@ -22,10 +22,17 @@ type SubagentInfo struct {
 	Task      string
 }
 
-// TickMsg triggers periodic UI telemetry refresh.
 type TickMsg time.Time
+type dbLoadMsg struct {
+	totalTokens int64
+	totalIn     int64
+	totalOut    int64
+	totalJobs   int64
+	totalCost   float64
+	agents      []SubagentInfo
+	logs        []string
+}
 
-// Model is the Bubbletea application state.
 type Model struct {
 	activeTab     int
 	width         int
@@ -40,92 +47,74 @@ type Model struct {
 	totalCost     float64
 	avgLatency    int
 	connected     bool
+	repo          db.Repository
 }
 
-func loadDataFromDB() (int64, int64, int64, int64, float64, []SubagentInfo, []string) {
-    db, err := ingest.InitDB()
-    if err != nil {
-        return 0, 0, 0, 0, 0, nil, []string{fmt.Sprintf("[ERROR] DB Init failed: %v", err)}
-    }
-    defer db.Close()
+func loadDataCmd(repo db.Repository) tea.Cmd {
+	return func() tea.Msg {
+		var inT, outT, jobs, tokens int64
+		var cost float64
+		var agents []SubagentInfo
+		var logs []string
 
-    var totalIn int64
-    var totalOut int64
-    var totalJobs int64
-    var totalTokens int64
-    var totalCost float64
-    var agents []SubagentInfo
-    var logs []string
+		stats, err := repo.GetAgentStats()
+		if err == nil {
+			for _, s := range stats {
+				tokens += s.InputTokens + s.OutputTokens
+				inT += s.InputTokens
+				outT += s.OutputTokens
+				jobs += s.Jobs
+				cost += s.Cost
+				agents = append(agents, SubagentInfo{
+					Name:   s.Name,
+					Tokens: s.InputTokens + s.OutputTokens,
+					Status: "IDLE",
+					Task:   "Aggregated from DB",
+				})
+			}
+		}
 
-    rows, err := db.Query("SELECT agent, SUM(input_tokens), SUM(output_tokens), SUM(cost), COUNT(*) FROM token_logs GROUP BY agent")
-    if err == nil {
-        for rows.Next() {
-            var name string
-            var inT, outT int64
-            var cost float64
-            var count int64
-            if err := rows.Scan(&name, &inT, &outT, &cost, &count); err == nil {
-                tokens := inT + outT
-                totalTokens += tokens
-                totalIn += inT
-                totalOut += outT
-                totalJobs += count
-                totalCost += cost
-                agents = append(agents, SubagentInfo{
-                    Name: name,
-                    Tokens: tokens,
-                    Status: "IDLE",
-                    Task: "Aggregated from DB",
-                })
-            }
-        }
-        rows.Close()
-    } else {
-        logs = append(logs, fmt.Sprintf("[ERROR] DB Query failed: %v", err))
-    }
-    
-    logRows, err := db.Query("SELECT timestamp, agent, model, input_tokens, output_tokens FROM token_logs ORDER BY timestamp DESC LIMIT 10")
-    if err == nil {
-        for logRows.Next() {
-            var ts time.Time
-            var agent, model string
-            var inT, outT int
-            if err := logRows.Scan(&ts, &agent, &model, &inT, &outT); err == nil {
-                logs = append([]string{fmt.Sprintf("[%s] [%s] %s %d in %d out", ts.Format("15:04:05"), agent, model, inT, outT)}, logs...)
-            }
-        }
-        logRows.Close()
-    }
+		recentLogs, err := repo.GetRecentLogs(10)
+		if err == nil {
+			for _, l := range recentLogs {
+				logs = append(logs, fmt.Sprintf("[LOG] %s", l))
+			}
+		}
 
-    if len(agents) == 0 {
-        agents = append(agents, SubagentInfo{Name: "No agents found", Status: "IDLE"})
-    }
-    if len(logs) == 0 {
-        logs = append(logs, "[SYSTEM] Connected to SQLite DB (No logs found)")
-    } else {
-        logs = append(logs, "[SYSTEM] Connected to SQLite DB")
-    }
+		if len(agents) == 0 {
+			agents = append(agents, SubagentInfo{Name: "No agents found", Status: "IDLE"})
+		}
+		if len(logs) == 0 {
+			logs = append(logs, "[SYSTEM] Connected to SQLite DB (No logs found)")
+		} else {
+			logs = append(logs, "[SYSTEM] Connected to SQLite DB")
+		}
 
-    return totalTokens, totalIn, totalOut, totalJobs, totalCost, agents, logs
+		return dbLoadMsg{
+			totalTokens: tokens,
+			totalIn:     inT,
+			totalOut:    outT,
+			totalJobs:   jobs,
+			totalCost:   cost,
+			agents:      agents,
+			logs:        logs,
+		}
+	}
 }
 
-// NewModel creates a pre-populated Catppuccin Frappe TUI Model.
 func NewModel() Model {
-    tokens, inT, outT, jobs, cost, agents, logs := loadDataFromDB()
+	dbConn, err := ingest.InitDB()
+	r := ingest.NewRepository(dbConn)
+	if err != nil {
+		fmt.Printf("Failed to init repo: %v\n", err)
+	}
 
 	return Model{
 		activeTab: 0,
 		width:     80,
 		height:    24,
 		connected: true,
-		totalTokens: tokens,
-		totalIn:     inT,
-		totalOut:    outT,
-		totalJobs:   jobs,
-		totalCost:   cost,
-		avgLatency:  0,
-		agents: agents,
-		logs: logs,
+		repo:      r,
 	}
 }
 
@@ -135,12 +124,10 @@ func tickEvery() tea.Cmd {
 	})
 }
 
-// Init initializes background commands.
 func (m Model) Init() tea.Cmd {
-	return tickEvery()
+	return tea.Batch(tickEvery(), loadDataCmd(m.repo))
 }
 
-// Update handles messages and input events.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
@@ -148,12 +135,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 
 	case TickMsg:
-		
 		m.logs = append(m.logs, fmt.Sprintf("[%s] [WEBSOCKET] Telemetry sync heartbeat OK", time.Now().Format("15:04:05")))
 		if len(m.logs) > 50 {
 			m.logs = m.logs[1:]
 		}
 		return m, tickEvery()
+
+	case dbLoadMsg:
+		m.totalTokens = msg.totalTokens
+		m.totalIn = msg.totalIn
+		m.totalOut = msg.totalOut
+		m.totalJobs = msg.totalJobs
+		m.totalCost = msg.totalCost
+		m.agents = msg.agents
+		m.logs = append(m.logs, msg.logs...)
+		return m, nil
 
 	case tea.KeyMsg:
 		switch msg.String() {
@@ -180,29 +176,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.selectedAgent--
 			}
 		case "r":
-			tokens, inT, outT, jobs, cost, agents, logs := loadDataFromDB()
-			m.totalTokens = tokens
-			m.totalIn = inT
-			m.totalOut = outT
-			m.totalJobs = jobs
-			m.totalCost = cost
-			m.agents = agents
-			m.logs = logs
 			m.logs = append(m.logs, fmt.Sprintf("[%s] [USER] Manual refresh triggered", time.Now().Format("15:04:05")))
+			return m, loadDataCmd(m.repo)
 		}
 	}
 	return m, nil
 }
 
-// View renders the TUI layout.
 func (m Model) View() string {
 	var b strings.Builder
 
-	// Top Banner & Tabs
 	b.WriteString(m.renderHeader())
 	b.WriteString("\n\n")
 
-	// Main View Content depending on active tab
 	switch m.activeTab {
 	case 0:
 		b.WriteString(m.renderOverviewTab())
@@ -215,7 +201,6 @@ func (m Model) View() string {
 	}
 
 	b.WriteString("\n\n")
-	// Bottom Status Bar
 	b.WriteString(m.renderFooter())
 
 	return b.String()
@@ -267,7 +252,6 @@ func (m Model) renderOverviewTab() string {
 
 	row1 := lipgloss.JoinHorizontal(lipgloss.Top, kpi1, "  ", kpi2, "  ", kpi3, "  ", kpi4)
 
-	// Distribution breakdown
 	distTitle := HeaderStyle.Render("Model Cost & Usage Breakdown:")
 	anthropicBar := lipgloss.NewStyle().Foreground(ColorMauve).Render("■ Real data collected for active agents")
 	openaiBar := lipgloss.NewStyle().Foreground(ColorTeal).Render("")

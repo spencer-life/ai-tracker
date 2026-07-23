@@ -6,7 +6,7 @@ description: >-
 
 # AI Tracker (ait) Skill
 
-This skill allows agents to invoke the `ait` CLI tool to query usage metrics for Claude Code, Antigravity, and Codex.
+This 2.0 Enterprise skill allows agents to invoke the `ait` CLI tool to query usage metrics for Claude Code, Antigravity, and Codex.
 
 ## Usage
 

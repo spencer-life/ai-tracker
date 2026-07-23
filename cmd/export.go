@@ -12,6 +12,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/spencer-life/ai-tracker/ingest"
+	"github.com/spencer-life/ai-tracker/internal/db"
 )
 
 var (
@@ -28,12 +29,13 @@ var exportCmd = &cobra.Command{
 	Use:   "export",
 	Short: "Export telemetry data from the local SQLite DB",
 	Run: func(cmd *cobra.Command, args []string) {
-		db, err := ingest.InitDB()
+		dbConn, err := ingest.InitDB()
+		repo := ingest.NewRepository(dbConn)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error initializing DB: %v\n", err)
 			os.Exit(1)
 		}
-		defer db.Close()
+		defer dbConn.Close()
 
 		query := "SELECT id, agent, timestamp, model, input_tokens, output_tokens, cost FROM token_logs WHERE 1=1"
 		var queryArgs []interface{}
@@ -70,16 +72,16 @@ var exportCmd = &cobra.Command{
 			queryArgs = append(queryArgs, exportAgent)
 		}
 
-		rows, err := db.Query(query, queryArgs...)
+		rows, err := repo.GetDB().Query(query, queryArgs...)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error querying DB: %v\n", err)
 			os.Exit(1)
 		}
 		defer rows.Close()
 
-		var logs []ingest.TokenLog
+		var logs []db.TokenLog
 		for rows.Next() {
-			var log ingest.TokenLog
+			var log db.TokenLog
 			if err := rows.Scan(&log.ID, &log.Agent, &log.Timestamp, &log.Model, &log.Input, &log.Output, &log.Cost); err != nil {
 				fmt.Fprintf(os.Stderr, "Error scanning row: %v\n", err)
 				continue

@@ -8,10 +8,10 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Outfit:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap" rel="stylesheet">
   
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://unpkg.com/lenis@1.1.18/dist/lenis.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/ScrollTrigger.min.js"></script>
+  <script src="assets/js/tailwind.js"></script>
+  <script src="assets/js/lenis.min.js"></script>
+  <script src="assets/js/gsap.min.js"></script>
+  <script src="assets/js/ScrollTrigger.min.js"></script>
 
   <style>
     /* Catppuccin Theme Variables */
@@ -676,41 +676,40 @@
       });
     }
 
-    // 5. Simulated Live Log Stream Addition
+    // 5. Real WebSocket Stream
     const logConsole = document.getElementById('log-console');
-    const events = [
-      { tag: '[AGENT:conv-8f92a]', color: 'text-ctp-mauve', text: 'Completed search iteration (4 matches found in /pkg/tui)' },
-      { tag: '[METRICS]', color: 'text-ctp-peach', text: 'Latency check: 310ms (P50 optimal)' },
-      { tag: '[WEBSOCKET]', color: 'text-ctp-green', text: 'Heartbeat ping ACK from TUI subscriber' },
-      { tag: '[LLM:anthropic]', color: 'text-ctp-blue', text: 'Claude 3.7 Sonnet stream chunk received: +820 tokens' },
-    ];
-
-    setInterval(() => {
-      const ev = events[Math.floor(Math.random() * events.length)];
-      const now = new Date().toISOString().replace('T', ' ').substring(0, 19);
-      const line = document.createElement('div');
-      line.className = 'text-ctp-subtext flex items-start gap-2 transition-all';
-      
-      const timeSpan = document.createElement('span');
-      timeSpan.className = 'text-ctp-overlay0';
-      timeSpan.textContent = `[${now}]`;
-      
-      const tagSpan = document.createElement('span');
-      tagSpan.className = ev.color;
-      tagSpan.textContent = ev.tag;
-      
-      const textSpan = document.createElement('span');
-      textSpan.textContent = ev.text;
-      
-      line.appendChild(timeSpan);
-      line.appendChild(document.createTextNode(' '));
-      line.appendChild(tagSpan);
-      line.appendChild(document.createTextNode(' '));
-      line.appendChild(textSpan);
-      
-      logConsole.appendChild(line);
-      logConsole.scrollTop = logConsole.scrollHeight;
-    }, 4500);
+    const ws = new WebSocket('ws://' + window.location.host + '/ws');
+    
+    ws.onmessage = (event) => {
+      try {
+        const ev = JSON.parse(event.data);
+        const now = new Date().toISOString().replace('T', ' ').substring(0, 19);
+        const line = document.createElement('div');
+        line.className = 'text-ctp-subtext flex items-start gap-2 transition-all';
+        
+        const timeSpan = document.createElement('span');
+        timeSpan.className = 'text-ctp-overlay0';
+        timeSpan.textContent = `[${now}]`;
+        
+        const tagSpan = document.createElement('span');
+        tagSpan.className = 'text-ctp-mauve';
+        tagSpan.textContent = `[AGENT:${ev.agent || 'system'}]`;
+        
+        const textSpan = document.createElement('span');
+        textSpan.textContent = `Model: ${ev.model}, Tokens: ${ev.input_tokens} in / ${ev.output_tokens} out`;
+        
+        line.appendChild(timeSpan);
+        line.appendChild(document.createTextNode(' '));
+        line.appendChild(tagSpan);
+        line.appendChild(document.createTextNode(' '));
+        line.appendChild(textSpan);
+        
+        logConsole.appendChild(line);
+        logConsole.scrollTop = logConsole.scrollHeight;
+      } catch (e) {
+        console.error("Failed to parse websocket message", e);
+      }
+    };
   </script>
 </body>
 </html>

@@ -23,7 +23,13 @@ It passively tails telemetry JSON logs using Go concurrency, extracts token metr
 
 ---
 
-## ✨ Features
+## ✨ 2.0 Enterprise Features
+
+- 🔌 **Real-Time WebSocket Engine**: Streams log telemetry instantly to the dashboard.
+- 🚀 **Byte-Offset Cursor Tracking**: O(1) sync times using file offset caching instead of hashing.
+- 📦 **Offline-First Embedded Dashboard**: Uses `go:embed` to serve Tailwind and GSAP without external CDN requests.
+- 🔐 **Safe Structural Redaction:** Sanitizes JSON values after parsing, preserving structural integrity.
+
 
 - 🔐 **Secret Redaction Engine:** Built-in security layer that automatically sanitizes sensitive credentials (JWTs, Anthropic API keys `sk-ant-api*`, AWS keys `AKIA*`, Doppler tokens `dp.pt.*`) before logs are stored or processed.
 - ⚡ **High-Concurrency SQLite WAL Mode:** Uses SQLite Write-Ahead Logging (`PRAGMA journal_mode=WAL`) to allow concurrent background log ingestion while serving dashboard queries without lock contention.
