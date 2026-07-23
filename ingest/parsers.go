@@ -168,7 +168,7 @@ func parseCodexLogs(repo *Repository, dir string) {
 		if err != nil || info.IsDir() || (!strings.HasSuffix(info.Name(), ".json") && !strings.HasSuffix(info.Name(), ".jsonl")) {
 			return nil
 		}
-		processFile(repo, path, "codex", "claude-5-sonnet")
+		processFile(repo, path, "codex", "codex-core-v1")
 		return nil
 	})
 }
