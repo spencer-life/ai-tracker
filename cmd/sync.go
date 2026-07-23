@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"log"
 
-	"ai-tracker/ingest"
+	"github.com/spencer-life/ai-tracker/ingest"
 	"github.com/spf13/cobra"
 )
 
