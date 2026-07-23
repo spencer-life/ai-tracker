@@ -9,7 +9,11 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/spencer-life/ai-tracker/internal/db"
 	"github.com/spencer-life/ai-tracker/ingest"
+	"golang.org/x/text/language"
+	"golang.org/x/text/message"
 )
+
+var p = message.NewPrinter(language.English)
 
 type SubagentInfo struct {
 	ID        string
@@ -229,7 +233,7 @@ func (m Model) renderHeader() string {
 func (m Model) renderOverviewTab() string {
 	kpi1 := CardStyle.Render(fmt.Sprintf("%s\n%s\n%s",
 		MetricLabelStyle.Render("TOTAL TOKENS"),
-		MetricValStyle.Render(fmt.Sprintf("%d", m.totalTokens)),
+		MetricValStyle.Render(p.Sprintf("%d", m.totalTokens)),
 		lipgloss.NewStyle().Foreground(ColorOverlay1).Render(fmt.Sprintf("Prompt: %.1fK | Comp: %.1fK", float64(m.totalIn)/1000, float64(m.totalOut)/1000)),
 	))
 
@@ -274,8 +278,8 @@ func (m Model) renderAgentsTab() string {
 			statusBadge = BadgeQueued.Render(a.Status)
 		}
 
-		line := fmt.Sprintf("%-22s %s  Model: %-18s Tokens: %-8d Latency: %dms",
-			a.Name, statusBadge, a.Model, a.Tokens, a.LatencyMs)
+		line := fmt.Sprintf("%-22s %s  Model: %-18s Tokens: %-8s Latency: %dms",
+			a.Name, statusBadge, a.Model, p.Sprintf("%d", a.Tokens), a.LatencyMs)
 
 		if i == m.selectedAgent {
 			rows = append(rows, ActiveCardStyle.Render(fmt.Sprintf("👉 %s\n   Task: %s (id: %s, duration: %s)", line, a.Task, a.ID, a.Duration)))

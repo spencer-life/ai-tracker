@@ -8,9 +8,13 @@ import (
 	"time"
 
 	"github.com/spencer-life/ai-tracker/internal/db"
+	"golang.org/x/text/language"
+	"golang.org/x/text/message"
 
 	_ "modernc.org/sqlite"
 )
+
+var p = message.NewPrinter(language.English)
 
 type TokenLog struct {
 	ID        int
@@ -142,7 +146,7 @@ func (r *Repository) GetRecentLogs(limit int) ([]string, error) {
 		var inT, outT int
 		var cost float64
 		if err := rows.Scan(&agent, &ts, &model, &inT, &outT, &cost); err == nil {
-			logs = append(logs, fmt.Sprintf("%s [%s] IN:%d OUT:%d COST:$%.4f", ts.Format(time.RFC3339), agent, inT, outT, cost))
+			logs = append(logs, fmt.Sprintf("%s [%s] IN:%s OUT:%s COST:$%.4f", ts.Format(time.RFC3339), agent, p.Sprintf("%d", inT), p.Sprintf("%d", outT), cost))
 		}
 	}
 	return logs, nil
