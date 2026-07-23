@@ -264,7 +264,7 @@
         <div class="flex justify-between items-start">
           <div>
             <span class="text-xs font-mono uppercase tracking-wider text-ctp-subtext">Total Tokens</span>
-            <div class="text-2xl md:text-3xl font-heading font-extrabold text-ctp-text mt-1" id="stat-tokens">4,892,150</div>
+            <div class="text-2xl md:text-3xl font-heading font-extrabold text-ctp-text mt-1" id="stat-tokens">0</div>
           </div>
           <div class="w-9 h-9 rounded-xl bg-ctp-mauve/15 border border-ctp-mauve/30 flex items-center justify-center text-ctp-mauve text-lg">
             🪙
@@ -281,7 +281,7 @@
         <div class="flex justify-between items-start">
           <div>
             <span class="text-xs font-mono uppercase tracking-wider text-ctp-subtext">Est. Model Cost</span>
-            <div class="text-2xl md:text-3xl font-heading font-extrabold text-ctp-text mt-1" id="stat-cost">$18.42</div>
+            <div class="text-2xl md:text-3xl font-heading font-extrabold text-ctp-text mt-1" id="stat-cost">$0.00</div>
           </div>
           <div class="w-9 h-9 rounded-xl bg-ctp-green/15 border border-ctp-green/30 flex items-center justify-center text-ctp-green text-lg">
             💳
@@ -298,7 +298,7 @@
         <div class="flex justify-between items-start">
           <div>
             <span class="text-xs font-mono uppercase tracking-wider text-ctp-subtext">Active Subagents</span>
-            <div class="text-2xl md:text-3xl font-heading font-extrabold text-ctp-text mt-1" id="stat-agents">6 Running</div>
+            <div class="text-2xl md:text-3xl font-heading font-extrabold text-ctp-text mt-1" id="stat-agents">0 Registered</div>
           </div>
           <div class="w-9 h-9 rounded-xl bg-ctp-blue/15 border border-ctp-blue/30 flex items-center justify-center text-ctp-blue text-lg">
             🤖
@@ -315,7 +315,7 @@
         <div class="flex justify-between items-start">
           <div>
             <span class="text-xs font-mono uppercase tracking-wider text-ctp-subtext">Avg Response Time</span>
-            <div class="text-2xl md:text-3xl font-heading font-extrabold text-ctp-text mt-1" id="stat-latency">412 ms</div>
+            <div class="text-2xl md:text-3xl font-heading font-extrabold text-ctp-text mt-1" id="stat-latency">N/A</div>
           </div>
           <div class="w-9 h-9 rounded-xl bg-ctp-peach/15 border border-ctp-peach/30 flex items-center justify-center text-ctp-peach text-lg">
             ⚡
@@ -347,88 +347,7 @@
 
           <!-- Table / Card List of Subagents -->
           <div class="space-y-3" id="agent-list-container">
-            
-            <!-- Subagent Item 1 -->
-            <div class="p-4 rounded-xl bg-ctp-surface0/40 hover:bg-ctp-surface0/80 border border-ctp-surface1/40 transition-all flex flex-col md:flex-row md:items-center justify-between gap-4">
-              <div class="space-y-1">
-                <div class="flex items-center gap-2.5">
-                  <span class="font-heading font-bold text-sm text-ctp-text">Codebase Researcher</span>
-                  <span class="px-2 py-0.5 rounded text-[10px] font-mono font-semibold bg-ctp-green/15 text-ctp-green border border-ctp-green/30">RUNNING</span>
-                  <span class="text-xs font-mono text-ctp-overlay1">id: conv-8f92a</span>
-                </div>
-                <p class="text-xs text-ctp-subtext">Parsing AST patterns and repository dependencies across 42 files</p>
-              </div>
-
-              <div class="flex items-center gap-6 font-mono text-xs text-ctp-subtext">
-                <div>
-                  <span class="block text-[10px] text-ctp-overlay0 uppercase">Model</span>
-                  <span class="text-ctp-mauve font-medium">claude-3-7-sonnet</span>
-                </div>
-                <div>
-                  <span class="block text-[10px] text-ctp-overlay0 uppercase">Tokens</span>
-                  <span class="text-ctp-text">142.8k</span>
-                </div>
-                <div>
-                  <span class="block text-[10px] text-ctp-overlay0 uppercase">Latency</span>
-                  <span class="text-ctp-teal">380ms</span>
-                </div>
-              </div>
-            </div>
-
-            <!-- Subagent Item 2 -->
-            <div class="p-4 rounded-xl bg-ctp-surface0/40 hover:bg-ctp-surface0/80 border border-ctp-surface1/40 transition-all flex flex-col md:flex-row md:items-center justify-between gap-4">
-              <div class="space-y-1">
-                <div class="flex items-center gap-2.5">
-                  <span class="font-heading font-bold text-sm text-ctp-text">TUI Component Renderer</span>
-                  <span class="px-2 py-0.5 rounded text-[10px] font-mono font-semibold bg-ctp-blue/15 text-ctp-blue border border-ctp-blue/30">RUNNING</span>
-                  <span class="text-xs font-mono text-ctp-overlay1">id: conv-3a17c</span>
-                </div>
-                <p class="text-xs text-ctp-subtext">Building Bubbletea views & Lipgloss Catppuccin color bindings</p>
-              </div>
-
-              <div class="flex items-center gap-6 font-mono text-xs text-ctp-subtext">
-                <div>
-                  <span class="block text-[10px] text-ctp-overlay0 uppercase">Model</span>
-                  <span class="text-ctp-blue font-medium">gemini-2.5-pro</span>
-                </div>
-                <div>
-                  <span class="block text-[10px] text-ctp-overlay0 uppercase">Tokens</span>
-                  <span class="text-ctp-text">89.4k</span>
-                </div>
-                <div>
-                  <span class="block text-[10px] text-ctp-overlay0 uppercase">Latency</span>
-                  <span class="text-ctp-teal">290ms</span>
-                </div>
-              </div>
-            </div>
-
-            <!-- Subagent Item 3 -->
-            <div class="p-4 rounded-xl bg-ctp-surface0/40 hover:bg-ctp-surface0/80 border border-ctp-surface1/40 transition-all flex flex-col md:flex-row md:items-center justify-between gap-4">
-              <div class="space-y-1">
-                <div class="flex items-center gap-2.5">
-                  <span class="font-heading font-bold text-sm text-ctp-text">API Schema Validator</span>
-                  <span class="px-2 py-0.5 rounded text-[10px] font-mono font-semibold bg-ctp-peach/15 text-ctp-peach border border-ctp-peach/30">QUEUED</span>
-                  <span class="text-xs font-mono text-ctp-overlay1">id: conv-92b4e</span>
-                </div>
-                <p class="text-xs text-ctp-subtext">Validating WebSocket JSON telemetry schemas against Go structs</p>
-              </div>
-
-              <div class="flex items-center gap-6 font-mono text-xs text-ctp-subtext">
-                <div>
-                  <span class="block text-[10px] text-ctp-overlay0 uppercase">Model</span>
-                  <span class="text-ctp-peach font-medium">gpt-4o</span>
-                </div>
-                <div>
-                  <span class="block text-[10px] text-ctp-overlay0 uppercase">Tokens</span>
-                  <span class="text-ctp-text">12.1k</span>
-                </div>
-                <div>
-                  <span class="block text-[10px] text-ctp-overlay0 uppercase">Latency</span>
-                  <span class="text-ctp-teal">450ms</span>
-                </div>
-              </div>
-            </div>
-
+            <!-- Agents will be rendered here dynamically -->
           </div>
         </div>
 
@@ -447,31 +366,6 @@
 
           <!-- Log Console Container -->
           <div class="bg-ctp-crust rounded-xl p-4 font-mono text-xs space-y-2 border border-ctp-surface0 max-h-72 overflow-y-auto" id="log-console">
-            <div class="text-ctp-subtext flex items-start gap-2">
-              <span class="text-ctp-overlay0">[2026-07-22 19:02:20]</span>
-              <span class="text-ctp-mauve">[SYSTEM]</span>
-              <span>Telemetry engine initialized on port :8080 (Catppuccin Frappe mode)</span>
-            </div>
-            <div class="text-ctp-subtext flex items-start gap-2">
-              <span class="text-ctp-overlay0">[2026-07-22 19:02:22]</span>
-              <span class="text-ctp-blue">[AGENT:conv-8f92a]</span>
-              <span class="text-ctp-text">Executing tool <code class="text-ctp-yellow">grep_search</code> query="Bubbletea" path="/home/mlpc/dev/ai-tracker"</span>
-            </div>
-            <div class="text-ctp-subtext flex items-start gap-2">
-              <span class="text-ctp-overlay0">[2026-07-22 19:02:24]</span>
-              <span class="text-ctp-green">[WEBSOCKET]</span>
-              <span>Client connected from 127.0.0.1:49210 (TUI subscriber)</span>
-            </div>
-            <div class="text-ctp-subtext flex items-start gap-2">
-              <span class="text-ctp-overlay0">[2026-07-22 19:02:25]</span>
-              <span class="text-ctp-peach">[METRICS]</span>
-              <span>Token usage sync completed: +3,420 tokens ($0.012 est.)</span>
-            </div>
-            <div class="text-ctp-subtext flex items-start gap-2">
-              <span class="text-ctp-overlay0">[2026-07-22 19:02:28]</span>
-              <span class="text-ctp-lavender">[TUI]</span>
-              <span>Bubbletea view state switched to <code class="text-ctp-teal">[Tab 2: Active Agents]</code></span>
-            </div>
           </div>
         </div>
 
