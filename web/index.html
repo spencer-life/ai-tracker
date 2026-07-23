@@ -486,7 +486,7 @@
             Model Distribution & Usage
           </h3>
 
-          <div class="space-y-4 font-mono text-xs">
+          <div class="space-y-4 font-mono text-xs" id="provider-breakdown-container">
             <!-- Anthropic Claude -->
             <div class="space-y-1.5">
               <div class="flex justify-between items-center text-ctp-subtext">
@@ -710,6 +710,81 @@
         console.error("Failed to parse websocket message", e);
       }
     };
+
+    async function fetchTelemetry() {
+      try {
+        const res = await fetch('/api/v1/telemetry');
+        const data = await res.json();
+        
+        // Update Totals
+        document.getElementById('stat-tokens').innerText = new Intl.NumberFormat().format(data.totalTokens);
+        document.getElementById('stat-cost').innerText = '$' + data.totalCost.toFixed(4);
+        document.getElementById('stat-agents').innerText = `${data.activeAgents} Registered`;
+        document.getElementById('stat-latency').innerText = data.avgLatency || "N/A";
+        
+        // Update Agents
+        const container = document.getElementById('agent-list-container');
+        if (container && data.agents) {
+          container.innerHTML = '';
+          data.agents.forEach(agent => {
+            const color = agent.model.includes('claude') ? 'mauve' : agent.model.includes('gemini') ? 'blue' : 'teal';
+            container.innerHTML += `
+              <div class="p-4 rounded-xl bg-ctp-surface0/40 hover:bg-ctp-surface0/80 border border-ctp-surface1/40 transition-all flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div class="space-y-1">
+                  <div class="flex items-center gap-2.5">
+                    <span class="font-heading font-bold text-sm text-ctp-text">${agent.name}</span>
+                    <span class="px-2 py-0.5 rounded text-[10px] font-mono font-semibold bg-ctp-${color}/15 text-ctp-${color} border border-ctp-${color}/30">${agent.status}</span>
+                  </div>
+                  <p class="text-xs text-ctp-subtext">Active tasks: ${agent.activeTasks}</p>
+                </div>
+                <div class="flex items-center gap-6 font-mono text-xs text-ctp-subtext">
+                  <div>
+                    <span class="block text-[10px] text-ctp-overlay0 uppercase">Model</span>
+                    <span class="text-ctp-${color} font-medium">${agent.model}</span>
+                  </div>
+                  <div>
+                    <span class="block text-[10px] text-ctp-overlay0 uppercase">Tokens</span>
+                    <span class="text-ctp-text">${new Intl.NumberFormat().format(agent.tokens)}</span>
+                  </div>
+                  <div>
+                    <span class="block text-[10px] text-ctp-overlay0 uppercase">Latency</span>
+                    <span class="text-ctp-${color}">${agent.latency}</span>
+                  </div>
+                </div>
+              </div>
+            `;
+          });
+        }
+        
+        // Update Providers
+        const provContainer = document.getElementById('provider-breakdown-container');
+        if (provContainer && data.providers) {
+          provContainer.innerHTML = '';
+          data.providers.forEach(p => {
+            provContainer.innerHTML += `
+              <div class="space-y-1.5">
+                <div class="flex justify-between items-center text-ctp-subtext">
+                  <span class="flex items-center gap-1.5 ${p.color.replace('bg-', 'text-')} font-semibold">
+                    <span class="w-2 h-2 rounded-full ${p.color}"></span>
+                    ${p.provider}
+                  </span>
+                  <span>${p.percent.toFixed(1)}% ($${p.cost.toFixed(4)})</span>
+                </div>
+                <div class="w-full h-2 rounded-full bg-ctp-surface0 overflow-hidden">
+                  <div class="h-full ${p.color} rounded-full" style="width: ${p.percent}%;"></div>
+                </div>
+              </div>
+            `;
+          });
+        }
+      } catch (e) {
+        console.error("Fetch telemetry error:", e);
+      }
+    }
+
+    document.addEventListener("DOMContentLoaded", fetchTelemetry);
+    document.getElementById('btn-refresh')?.addEventListener('click', fetchTelemetry);
+
   </script>
 </body>
 </html>

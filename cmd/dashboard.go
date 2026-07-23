@@ -40,7 +40,7 @@ var dashboardCmd = &cobra.Command{
 			}()
 		}
 
-		if err := web.StartServer(addr); err != nil {
+		if err := web.StartServer(addr, dbConn); err != nil {
 			fmt.Printf("Error starting dashboard server: %v\n", err)
 			os.Exit(1)
 		}
