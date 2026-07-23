@@ -41,6 +41,13 @@ It passively tails telemetry JSON logs using Go concurrency, extracts token metr
 
 ---
 
+## ⚠️ Known Limitations
+
+- **Antigravity Token Tracking:** Currently, the Antigravity CLI does not write token usage metrics to disk in its local `transcript.jsonl` files (it only streams them directly in-memory to its statusline hook). As a result, `ai-tracker` cannot presently extract token telemetry for Antigravity sessions until upstream support is added to Antigravity.
+- **Claude & Codex Log Parsing:** Claude (`~/.claude/usage-data/`) and Codex (`~/.codex/hook-state/`) save token telemetry securely as standard `.json` files, which `ai-tracker` fully supports out of the box via `ait sync`.
+
+---
+
 ## 🛠️ Usage & CLI Reference
 
 ### 1. Launch Web Dashboard
