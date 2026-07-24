@@ -47,9 +47,9 @@ var (
 			Padding(0, 2)
 
 	InactiveTabStyle = lipgloss.NewStyle().
-			Foreground(ColorSubtext0).
-			Background(ColorSurface0).
-			Padding(0, 2)
+				Foreground(ColorSubtext0).
+				Background(ColorSurface0).
+				Padding(0, 2)
 
 	CardStyle = lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
@@ -72,7 +72,7 @@ var (
 			Bold(true)
 
 	MetricLabelStyle = lipgloss.NewStyle().
-			Foreground(ColorSubtext0)
+				Foreground(ColorSubtext0)
 
 	StatusBarStyle = lipgloss.NewStyle().
 			Foreground(ColorText).

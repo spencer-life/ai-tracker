@@ -1,450 +1,89 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>AI Tracker 2.0 – CLI Guide</title>
-  
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-  
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark light">
+  <title>AI Tracker v2 Guide</title>
   <style>
-    :root {
-      /* Catppuccin Frappe Core */
-      --ctp-base: #303446;
-      --ctp-mantle: #292c3c;
-      --ctp-crust: #232634;
-      --ctp-text: #c6d0f5;
-      --ctp-subtext: #a5adce;
-      --ctp-surface0: #414559;
-      --ctp-surface1: #51576d;
-      --ctp-surface2: #626880;
-      
-      /* Accent: Go Blue apparent */
-      --ctp-blue: #8caaee;
-      --ctp-sapphire: #85c1dc;
-      --ctp-sky: #99d1db;
-
-      --font-body: 'Inter', sans-serif;
-      --font-display: 'Outfit', sans-serif;
-      --font-mono: 'JetBrains Mono', monospace;
-    }
-
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-    }
-
-    body {
-      background-color: var(--ctp-base);
-      color: var(--ctp-text);
-      font-family: var(--font-body);
-      line-height: 1.6;
-      -webkit-font-smoothing: antialiased;
-      display: flex;
-      min-height: 100vh;
-    }
-
-    /* Sidebar */
-    aside {
-      width: 280px;
-      background-color: var(--ctp-mantle);
-      border-right: 1px solid var(--ctp-surface0);
-      padding: 3rem 2rem;
-      position: sticky;
-      top: 0;
-      height: 100vh;
-      overflow-y: auto;
-    }
-
-    .brand {
-      font-family: var(--font-display);
-      font-weight: 700;
-      font-size: 1.5rem;
-      color: var(--ctp-blue);
-      margin-bottom: 3rem;
-      display: flex;
-      align-items: center;
-      gap: 0.75rem;
-    }
-
-    .brand-icon {
-      width: 24px;
-      height: 24px;
-      background: var(--ctp-blue);
-      border-radius: 6px;
-      display: inline-block;
-      box-shadow: 0 0 15px rgba(140, 170, 238, 0.4);
-    }
-
-    nav ul {
-      list-style: none;
-    }
-
-    nav li {
-      margin-bottom: 0.5rem;
-    }
-
-    nav a {
-      color: var(--ctp-subtext);
-      text-decoration: none;
-      font-weight: 500;
-      font-size: 0.95rem;
-      display: block;
-      padding: 0.5rem 0.75rem;
-      border-radius: 6px;
-      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-    }
-
-    nav a:hover, nav a.active {
-      background-color: var(--ctp-surface0);
-      color: var(--ctp-blue);
-    }
-
-    /* Main Content */
-    main {
-      flex: 1;
-      padding: 4rem 5rem;
-      max-width: 900px;
-    }
-
-    h1, h2, h3 {
-      font-family: var(--font-display);
-      text-wrap: balance;
-    }
-
-    h1 {
-      font-size: 3.5rem;
-      font-weight: 700;
-      letter-spacing: -0.02em;
-      margin-bottom: 1.5rem;
-      color: #fff;
-    }
-
-    h2 {
-      font-size: 2rem;
-      font-weight: 600;
-      margin-top: 4rem;
-      margin-bottom: 1.5rem;
-      padding-bottom: 0.75rem;
-      border-bottom: 1px solid var(--ctp-surface0);
-      color: var(--ctp-blue);
-    }
-
-    h3 {
-      font-size: 1.25rem;
-      font-weight: 600;
-      margin-top: 2rem;
-      margin-bottom: 1rem;
-      color: var(--ctp-text);
-    }
-
-    p {
-      color: var(--ctp-subtext);
-      margin-bottom: 1.5rem;
-      max-width: 70ch;
-      font-size: 1.05rem;
-    }
-
-    code {
-      font-family: var(--font-mono);
-      font-size: 0.85em;
-      background-color: var(--ctp-crust);
-      padding: 0.2em 0.4em;
-      border-radius: 4px;
-      color: var(--ctp-sapphire);
-    }
-
-    pre {
-      background-color: var(--ctp-crust);
-      padding: 1.5rem;
-      border-radius: 8px;
-      overflow-x: auto;
-      margin-bottom: 2rem;
-      border: 1px solid var(--ctp-surface0);
-    }
-
-    pre code {
-      background-color: transparent;
-      padding: 0;
-      color: var(--ctp-text);
-      font-size: 0.9rem;
-    }
-
-    /* Command Table */
-    .command-list {
-      margin-top: 2rem;
-    }
-
-    .cmd-item {
-      display: flex;
-      flex-direction: column;
-      padding: 1.5rem 0;
-      border-bottom: 1px solid var(--ctp-surface0);
-    }
-
-    .cmd-header {
-      display: flex;
-      align-items: baseline;
-      gap: 1rem;
-      margin-bottom: 0.5rem;
-    }
-
-    .cmd-name {
-      font-family: var(--font-mono);
-      font-size: 1.1rem;
-      color: var(--ctp-blue);
-      font-weight: 600;
-    }
-
-    .cmd-desc {
-      color: var(--ctp-subtext);
-      max-width: 65ch;
-    }
-
-    .cmd-flags {
-      margin-top: 1rem;
-      background: var(--ctp-mantle);
-      padding: 1rem;
-      border-radius: 6px;
-      border: 1px solid var(--ctp-surface0);
-    }
-
-    .flag-row {
-      display: flex;
-      gap: 1rem;
-      margin-bottom: 0.5rem;
-    }
-    .flag-row:last-child {
-      margin-bottom: 0;
-    }
-
-    .flag-name {
-      font-family: var(--font-mono);
-      color: var(--ctp-sky);
-      font-size: 0.85rem;
-      width: 120px;
-      flex-shrink: 0;
-    }
-
-    .flag-desc {
-      font-size: 0.9rem;
-      color: var(--ctp-subtext);
-    }
-
-    /* Architecture Callout */
-    .arch-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-      gap: 1.5rem;
-      margin-top: 2rem;
-    }
-
-    .arch-card {
-      background: var(--ctp-mantle);
-      border: 1px solid var(--ctp-surface0);
-      padding: 1.5rem;
-      border-radius: 12px;
-      position: relative;
-      overflow: hidden;
-    }
-
-    .arch-card::before {
-      content: '';
-      position: absolute;
-      top: 0; left: 0; right: 0;
-      height: 3px;
-      background: var(--ctp-blue);
-      opacity: 0.8;
-    }
-
-    .arch-card h4 {
-      font-family: var(--font-display);
-      font-size: 1.1rem;
-      color: #fff;
-      margin-bottom: 0.75rem;
-    }
-
-    .arch-card p {
-      margin-bottom: 0;
-      font-size: 0.95rem;
-    }
-
-    /* Animations */
-    @media (prefers-reduced-motion: no-preference) {
-      .fade-up {
-        opacity: 0;
-        transform: translateY(20px);
-        animation: fadeUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-      }
-      
-      .delay-1 { animation-delay: 0.1s; }
-      .delay-2 { animation-delay: 0.2s; }
-      
-      @keyframes fadeUp {
-        to {
-          opacity: 1;
-          transform: translateY(0);
-        }
-      }
-    }
+    :root { color-scheme: dark; --base:#303446; --mantle:#292c3c; --text:#c6d0f5; --muted:#a5adce; --blue:#8caaee; --border:#51576d; }
+    * { box-sizing: border-box; }
+    body { margin:0; background:var(--base); color:var(--text); font:16px/1.6 system-ui,sans-serif; }
+    main { width:min(900px,calc(100% - 2rem)); margin:auto; padding:3rem 0 5rem; }
+    h1,h2 { line-height:1.2; color:var(--blue); } h1 { font-size:clamp(2rem,7vw,4rem); }
+    p,li { color:var(--muted); } a { color:var(--blue); }
+    nav { display:flex; flex-wrap:wrap; gap:1rem; padding:1rem 0; border-block:1px solid var(--border); }
+    section { margin-top:3rem; } code { color:var(--text); background:var(--mantle); padding:.15rem .35rem; border-radius:.25rem; }
+    pre { overflow:auto; padding:1rem; background:var(--mantle); border:1px solid var(--border); border-radius:.5rem; }
+    pre code { padding:0; } table { width:100%; border-collapse:collapse; } th,td { padding:.65rem; text-align:left; border-bottom:1px solid var(--border); vertical-align:top; }
+    .callout { padding:1rem; background:var(--mantle); border-left:.25rem solid var(--blue); }
   </style>
 </head>
 <body>
+<main>
+  <header>
+    <p>Local, source-backed usage analytics</p>
+    <h1>AI Tracker v2</h1>
+    <p><code>ai-tracker</code> combines a Go CLI, terminal UI, and loopback-only browser dashboard for Codex, Claude Code, and agy sessions.</p>
+    <nav aria-label="Guide"><a href="#sources">Sources</a><a href="#commands">Commands</a><a href="#interfaces">Interfaces</a><a href="#privacy">Privacy</a></nav>
+  </header>
 
-  <aside>
-    <div class="brand">
-      <span class="brand-icon"></span>
-      AI Tracker 2.0
-    </div>
-    <nav>
-      <ul>
-        <li><a href="#overview" class="active">Overview</a></li>
-        <li><a href="#architecture">Enterprise Architecture</a></li>
-        <li><a href="#commands">CLI Commands</a></li>
-        <li><a href="#configuration">Configuration</a></li>
-      </ul>
-    </nav>
-  </aside>
+  <section id="sources">
+    <h2>What is measured</h2>
+    <table>
+      <thead><tr><th>Agent</th><th>Canonical local source</th><th>Semantics</th></tr></thead>
+      <tbody>
+        <tr><td>Codex</td><td><code>~/.codex/sessions/**/rollout-*.jsonl</code></td><td>Reported token categories, model, session, and parent-thread metadata from rollout events.</td></tr>
+        <tr><td>Claude Code</td><td><code>~/.claude/projects/**/*.jsonl</code></td><td>Assistant <code>message.usage</code> records, including cache fields, plus session/project/sidechain metadata.</td></tr>
+        <tr><td>agy</td><td><code>~/.gemini/antigravity-cli/</code> summary and conversation databases</td><td>Source-backed session/subtrajectory metadata. Authoritative token totals are not locally available.</td></tr>
+      </tbody>
+    </table>
+    <p class="callout">Agy transcript estimates are opt-in. Run <code>ai-tracker sync --include-estimates</code> to import them and add <code>--include-estimates</code> to a report to display them. They remain labelled <code>estimated</code>.</p>
+    <p>Usage carries a <code>reported</code>, <code>derived</code>, <code>estimated</code>, or <code>legacy</code> quality label. Normal totals exclude estimates. Costs use an embedded, versioned model-price snapshot and are API-equivalent estimates, not billing records. Unknown model prices remain null.</p>
+  </section>
 
-  <main>
-    <section id="overview" class="fade-up">
-      <h1>AI Tracker CLI</h1>
-      <p>A high-performance, embedded Go telemetry engine designed to aggregate, parse, and visualize API costs and token utilization across autonomous AI agents (Claude Code, Antigravity, and Codex).</p>
-      
-      <p>Built with Go, Cobra, and Bubbletea, AI Tracker operates passively. It intercepts agent transcripts, parses them locally using extreme performance optimizations, and provides an embedded real-time web dashboard wrapped in a beautiful Catppuccin Frappe aesthetic.</p>
-    </section>
+  <section id="commands">
+    <h2>Command reference</h2>
+<pre><code># Import or rebuild
+ai-tracker sync
+ai-tracker sync --watch
+ai-tracker sync --rebuild
 
-    <section id="architecture" class="fade-up delay-1">
-      <h2>Enterprise Architecture</h2>
-      <p>The 2.0 rewrite completely overhauled the ingestion pipeline to support massive log scales and concurrent readers/writers without locking or double-counting.</p>
-      
-      <div class="arch-grid">
-        <div class="arch-card">
-          <h4>Byte-Offset Cursors</h4>
-          <p>Instead of reading logs linearly and hashing every payload, the system now tracks exact file byte-offsets (<code>file_cursors</code> table). Sync times are O(1), instantly seeking to the end of the file.</p>
-        </div>
-        <div class="arch-card">
-          <h4>SQLite WAL Concurrency</h4>
-          <p>SQLite operates with Write-Ahead Logging (<code>journal_mode=WAL</code>) and a 5000ms busy timeout. This allows the backend to stream gigabytes of logs while the Web UI queries data concurrently without <code>database is locked</code> errors.</p>
-        </div>
-        <div class="arch-card">
-          <h4>Structural Redaction</h4>
-          <p>Logs often contain sensitive keys. Before ingestion, logs are unmarshaled, and string payloads are recursively scrubbed of AWS keys, JWTs, and API tokens. The raw text is discarded, preserving your privacy.</p>
-        </div>
-        <div class="arch-card">
-          <h4>Embedded WebSockets</h4>
-          <p>No separate node servers required. The Go binary embeds all Tailwind, GSAP, and HTML assets directly using <code>go:embed</code>. Telemetry flows instantly to the dashboard via a native Gorilla WebSocket broadcaster.</p>
-        </div>
-      </div>
-    </section>
+# Totals, calendar buckets, and sessions
+ai-tracker usage --range 30d
+ai-tracker daily --range 7d --tz America/Phoenix --json
+ai-tracker weekly --range mtd --json
+ai-tracker monthly --range custom --from 2026-01-01 --to 2026-07-01 --json
+ai-tracker sessions --range 30d --agent codex
 
-    <section id="commands" class="fade-up delay-2">
-      <h2>CLI Commands</h2>
-      <p>The <code>ait</code> binary exposes several subcommands for managing ingestion, querying data, and launching interfaces.</p>
+# Diagnostics and customization metadata
+ai-tracker doctor
+ai-tracker inventory
 
-      <div class="command-list">
-        
-        <div class="cmd-item">
-          <div class="cmd-header">
-            <span class="cmd-name">ait sync</span>
-          </div>
-          <p class="cmd-desc">Manually parses all agent directories (<code>~/.claude</code>, <code>~/.gemini/antigravity-cli</code>, <code>~/.codex</code>) and syncs token usage into the local SQLite database.</p>
-          <div class="cmd-flags">
-            <div class="flag-row">
-              <span class="flag-name">-w, --watch</span>
-              <span class="flag-desc">Runs sync continuously in an infinite loop, streaming new logs to the database in real-time.</span>
-            </div>
-          </div>
-        </div>
+# Machine-readable output and exports
+ai-tracker usage --range 30d --json
+ai-tracker export --range 7d --csv --out usage.zip
 
-        <div class="cmd-item">
-          <div class="cmd-header">
-            <span class="cmd-name">ait dashboard</span>
-          </div>
-          <p class="cmd-desc">Spins up the embedded Catppuccin Web Dashboard and WebSocket server. Serves static assets directly from memory.</p>
-          <div class="cmd-flags">
-            <div class="flag-row">
-              <span class="flag-name">--open</span>
-              <span class="flag-desc">Automatically opens the dashboard in your local web browser.</span>
-            </div>
-            <div class="flag-row">
-              <span class="flag-name">-p, --port</span>
-              <span class="flag-desc">Port to serve the dashboard on (default: 8080).</span>
-            </div>
-          </div>
-        </div>
+# Interfaces
+ai-tracker tui
+ai-tracker dashboard --open</code></pre>
+    <p>Report and export filters include <code>--range today|7d|30d|mtd|custom</code>, <code>--from</code>, <code>--to</code>, <code>--tz</code>, <code>--agent</code>, <code>--provider</code>, <code>--model</code>, <code>--quality</code>, <code>--include-estimates</code>, and <code>--limit</code>. Date ranges are half-open: the start is included and the end is excluded. Weekly buckets begin Monday. Human-readable report output is a range summary; the JSON form of <code>daily</code>, <code>weekly</code>, and <code>monthly</code> includes the selected bucketed series.</p>
+    <p><code>ai-tracker sync --rebuild</code> creates a timestamped backup, clears v2 facts and checkpoints, and reimports canonical sources. <code>ai-tracker clean --yes</code> also backs up before clearing, but does not reimport.</p>
+  </section>
 
-        <div class="cmd-item">
-          <div class="cmd-header">
-            <span class="cmd-name">ait export</span>
-          </div>
-          <p class="cmd-desc">Extracts raw token usage and pricing telemetry for external agents or analysis tools like <code>jq</code>.</p>
-          <div class="cmd-flags">
-            <div class="flag-row">
-              <span class="flag-name">--json</span>
-              <span class="flag-desc">Output data in raw JSON format.</span>
-            </div>
-            <div class="flag-row">
-              <span class="flag-name">--out &lt;file.zip&gt;</span>
-              <span class="flag-desc">Automatically compress the JSON export into a ZIP archive for easy transferring.</span>
-            </div>
-            <div class="flag-row">
-              <span class="flag-name">--from / --to</span>
-              <span class="flag-desc">Filter telemetry data by date range (e.g. <code>--from 2026-07-01</code>).</span>
-            </div>
-          </div>
-        </div>
+  <section id="interfaces">
+    <h2>TUI and browser dashboard</h2>
+    <p><code>ai-tracker tui</code> shows 30-day Overview, Trends, Sessions, Agents/Models, Inventory, and Data Health views. Use number keys or arrows to change tabs, <code>r</code> to refresh, and <code>q</code> to quit.</p>
+    <p><code>ai-tracker dashboard</code> performs an initial sync unless <code>--no-sync</code> is set, then serves the embedded dashboard on <code>127.0.0.1:8080</code>. Only loopback hosts are accepted because the server has no remote authentication. The local API is under <code>/api/v2</code>; browser-triggered committed sync updates use server-sent events at <code>/api/v2/events</code>.</p>
+    <p>The dashboard includes range/timezone/model/provider/agent/quality filters, daily token charts with a table fallback, session pagination, breakdowns, inventory, and sync health.</p>
+  </section>
 
-        <div class="cmd-item">
-          <div class="cmd-header">
-            <span class="cmd-name">ait clean</span>
-          </div>
-          <p class="cmd-desc">Safely wipes the local SQLite database (<code>~/.config/ai-tracker/data.db</code>) and resets all byte-offset cursors.</p>
-        </div>
-
-      </div>
-    </section>
-
-    <section id="configuration" class="fade-up delay-2">
-      <h2>Configuration</h2>
-      <p>By default, AI Tracker maps model names to their respective API costs (e.g., <code>claude-3.5-sonnet</code> at $3.00/M in, $15.00/M out). As AI vendors update pricing, you can override these defaults without recompiling the binary.</p>
-      
-      <h3>Custom Pricing File</h3>
-      <p>Create a file at <code>~/.config/ai-tracker/pricing.json</code> to override the cost logic dynamically:</p>
-<pre><code>{
-  "claude-4.8-opus": {
-    "input": 15.0,
-    "output": 75.0
-  },
-  "fable-5": {
-    "input": 2.0,
-    "output": 8.0
-  }
-}</code></pre>
-    </section>
-
-  </main>
-
-  <script>
-    // Simple smooth scrolling for sidebar navigation
-    document.querySelectorAll('nav a').forEach(anchor => {
-      anchor.addEventListener('click', function(e) {
-        e.preventDefault();
-        const targetId = this.getAttribute('href').substring(1);
-        const targetSection = document.getElementById(targetId);
-        
-        document.querySelectorAll('nav a').forEach(a => a.classList.remove('active'));
-        this.classList.add('active');
-
-        window.scrollTo({
-          top: targetSection.offsetTop - 40,
-          behavior: 'smooth'
-        });
-      });
-    });
-  </script>
+  <section id="privacy">
+    <h2>Storage and privacy</h2>
+    <p>By default, data is stored in <code>~/.config/ai-tracker/data.db</code>. Directories use mode <code>0700</code>; databases, backups, and exported files use <code>0600</code>. Set <code>AIT_DATA_DIR</code> to move the data directory.</p>
+    <p>On first opening a v1 database, AI Tracker creates a backup under <code>backups/</code> before adding the v2 schema. V2 reports query only the new source-backed tables.</p>
+    <p>The database stores accounting and session metadata, not prompt bodies, transcript text, hook commands, environment values, or full source paths. Source and project identifiers are hashed where appropriate. Inventory scans supported global configuration plus the current repository ancestry, returns basenames and stable hashes, and never executes discovered skills, hooks, agents, or plugins.</p>
+  </section>
+</main>
 </body>
 </html>

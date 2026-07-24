@@ -1,157 +1,97 @@
-<div align="center">
-  <img src="assets/banner.jpg" alt="AI Tracker Banner" width="100%">
-  
-  <h1>ai-tracker</h1>
-  <p><strong>Passive Log-Tailing Analytics Dashboard for Local AI Agents</strong></p>
-  
-  [![Go Report Card](https://goreportcard.com/badge/github.com/spencer-life/ai-tracker)](https://goreportcard.com/report/github.com/spencer-life/ai-tracker)
-  [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
-  
-  Tags: `golang`, `cli`, `ai`, `dashboard`, `tui`, `catppuccin`, `bubbletea`, `tailwindcss`, `wal-mode`, `redaction`
-</div>
+# ai-tracker
 
----
+`ai-tracker` is a local Go CLI, terminal UI, and browser dashboard for source-backed usage analytics across Codex, Claude Code, and Antigravity (`agy`). It tracks sessions, token categories, models, measurement quality, and API-equivalent cost without inventing missing telemetry.
 
-## 🚀 Overview
+## Data sources and trust model
 
-`ai-tracker` (`ait`) is a hyper-fast, zero-friction CLI tool and local web dashboard designed for monitoring local AI agent usage across multiple platforms:
-- **Claude Code** (`~/.claude/`)
-- **Antigravity** (`~/.gemini/antigravity-cli/brain/`)
-- **Codex** (`~/.codex/`)
+`ai-tracker sync` reads canonical local records:
 
-It passively tails telemetry JSON logs using Go concurrency, extracts token metrics, computes "Shadow API Costs" instantly, and wraps it in a premium **Catppuccin Frappe** visual design.
+- **Codex:** `~/.codex/sessions/**/rollout-*.jsonl`. Token counts come from new `token_count.last_token_usage` snapshots, including available cache and reasoning fields; repeated cumulative snapshots are deduplicated. Session and parent-thread metadata come from the same rollout.
+- **Claude Code:** `~/.claude/projects/**/*.jsonl`. Only assistant `message.usage` records are counted, including cache-read and cache-creation tokens. Session, project, sidechain, and parent metadata come from the project logs.
+- **agy / Antigravity:** `~/.gemini/antigravity-cli/conversation_summaries.db` and `conversations/*.db` provide session and subtrajectory metadata. These stores do not expose authoritative token accounting, so agy sessions have no tokens by default. `--include-estimates` can derive opt-in transcript estimates from `brain/**/transcript.jsonl` using character counts; those rows remain labelled `estimated`.
 
----
+Every event is labelled `reported`, `derived`, `estimated`, or `legacy`. Estimated usage is excluded from normal reports unless `--include-estimates` is explicitly supplied. Missing models and token categories remain unknown or zero as appropriate; they are not filled with fabricated splits.
 
-## ✨ 2.0 Enterprise Features
+Costs use a versioned pricing snapshot embedded in the binary and are labelled **API-equivalent estimates**. The initial snapshot covers Claude 3.5 Sonnet aliases and Gemini 1.5 Pro; current local Codex and newer Claude model names intentionally remain null until a verified price is added. These values do not represent subscription billing.
 
-- 🔌 **Real-Time WebSocket Engine**: Streams log telemetry instantly to the dashboard.
-- 🚀 **Byte-Offset Cursor Tracking**: O(1) sync times using file offset caching instead of hashing.
-- 📦 **Offline-First Embedded Dashboard**: Uses `go:embed` to serve Tailwind and GSAP without external CDN requests.
-- 🔐 **Safe Structural Redaction:** Sanitizes JSON values after parsing, preserving structural integrity.
+## Commands
 
-
-- 🔐 **Secret Redaction Engine:** Built-in security layer that automatically sanitizes sensitive credentials (JWTs, Anthropic API keys `sk-ant-api*`, AWS keys `AKIA*`, Doppler tokens `dp.pt.*`) before logs are stored or processed.
-- ⚡ **High-Concurrency SQLite WAL Mode:** Uses SQLite Write-Ahead Logging (`PRAGMA journal_mode=WAL`) to allow concurrent background log ingestion while serving dashboard queries without lock contention.
-- 🌐 **Embedded Web Dashboard:** Single Go binary serving a responsive Tailwind + GSAP + Lenis web interface (`ait dashboard`), featuring a `--open` flag for instant browser launch.
-- 💻 **Terminal UI (TUI):** Interactive Bubbletea terminal interface (`ait tui`) for rapid, keyboard-driven telemetry checks inside your terminal.
-- 🔄 **Continuous Ingestion Daemon:** Daemon watch mode (`ait sync --watch` / `ait sync -w`) that polls for new agent log activity every 5 seconds.
-- 📦 **Multi-Format Export & Date Filtering:** Rich data export capabilities (`ait export`) supporting JSON, CSV, compressed `.zip` archives, and granular date filters (`--from`, `--to`, `--days`).
-- 🧹 **Database Management & Info:** Quick database reset (`ait clean`) and version inspection (`ait version`).
-
----
-
-## ⚠️ Known Limitations
-
-- **Claude & Codex Log Parsing:** Claude (`~/.claude/usage-data/`) and Codex (`~/.codex/hook-state/`) save token telemetry securely as standard `.json` files, which `ai-tracker` fully supports out of the box via `ait sync`.
-- **Antigravity Token Tracking:** Because Antigravity does not natively log API token metrics to its local transcripts, `ai-tracker` dynamically estimates Antigravity token consumption using a safe heuristic fallback (character length ÷ 4) by parsing the local `transcript.jsonl` files directly.
-
----
-
-## 🛠️ Usage & CLI Reference
-
-### 1. Launch Web Dashboard
-Starts the Catppuccin-themed web dashboard and telemetry REST API (`/api/v1/telemetry`).
+Start by importing local sources:
 
 ```bash
-# Start server at http://127.0.0.1:8080
-ait dashboard
-
-# Automatically open the dashboard in your default web browser
-ait dashboard --open
-
-# Run on a custom host or port
-ait dashboard --host 0.0.0.0 --port 9090
+ai-tracker sync
+ai-tracker sync --rebuild              # create a backup, clear v2 facts/checkpoints, and reimport
+ai-tracker sync --watch                # poll every five seconds
+ai-tracker sync --include-estimates    # opt in to agy transcript estimates
 ```
 
-### 2. Interactive Terminal UI (TUI)
-Launch the Bubbletea TUI for keyboard-driven analysis.
+Query the same repository used by the TUI and web dashboard. The human-readable report output is a range summary; add `--json` to `daily`, `weekly`, or `monthly` to receive the corresponding bucketed series.
 
 ```bash
-ait tui
+ai-tracker usage --range 30d
+ai-tracker daily --range 7d --tz America/Phoenix --json
+ai-tracker weekly --range mtd --json
+ai-tracker monthly --range custom --from 2026-01-01 --to 2026-07-01 --json
+ai-tracker sessions --range 30d --agent codex
 ```
 
-### 3. Sync Agent Logs (Daemon & One-Shot Mode)
-Parse local log files and populate the database.
+`usage`, `daily`, `weekly`, `monthly`, and `sessions` accept `--range today|7d|30d|mtd|custom`, `--from`, `--to`, `--tz`, `--agent`, `--provider`, `--model`, `--quality`, `--include-estimates`, `--limit`, and `--json`. Ranges are half-open (`from` inclusive, `to` exclusive), and weekly buckets start on Monday.
+
+Inspect data health and local agent customizations:
 
 ```bash
-# One-shot sync of all agent logs
-ait sync
-
-# Daemon mode: continuously watch logs every 5 seconds
-ait sync --watch
-# or
-ait sync -w
+ai-tracker doctor
+ai-tracker doctor --json
+ai-tracker inventory
+ai-tracker inventory --json
 ```
 
-### 4. Export Telemetry Data
-Export token logs in JSON or CSV format, with optional ZIP compression and date filtering.
+`inventory` scans global configuration and the current repository ancestry for supported Codex, Claude, and agy skills, hooks, agents, plugins, rules, and instruction files. It reports metadata and precedence clues; it does not execute discovered components.
+
+Export filtered sessions as JSON, CSV, or a ZIP archive:
 
 ```bash
-# Export all records to JSON stdout
-ait export --json
-
-# Export to CSV formatted file
-ait export --csv --out telemetry.csv
-
-# Export data from the last 7 days to a compressed ZIP archive
-ait export --days 7 --csv --out usage-report.zip
-
-# Filter by date range (YYYY-MM-DD or RFC3339 timestamp)
-ait export --from 2026-07-01 --to 2026-07-22 --json --out july_report.json
-
-# Filter by specific AI agent
-ait export --agent antigravity --json
+ai-tracker export --range 7d
+ai-tracker export --range 30d --csv --out usage.csv
+ai-tracker export --range custom --from 2026-07-01 --to 2026-08-01 --out july.json
+ai-tracker export --agent claude --csv --out claude.zip
 ```
 
-### 5. Database Cleanup & Maintenance
-Safely wipe all ingested telemetry logs from the local SQLite database (`~/.config/ai-tracker/data.db`).
+Files written with `--out` use mode `0600`. A `.zip` suffix creates a compressed export.
+
+Launch either interface:
 
 ```bash
-ait clean
+ai-tracker tui
+ai-tracker dashboard
+ai-tracker dashboard --open
+ai-tracker dashboard --port 9090 --no-sync
 ```
 
-### 6. Version Info
-Display the current binary version of `ai-tracker`.
+The dashboard defaults to `http://127.0.0.1:8080`, embeds its CSS and JavaScript, and refuses non-loopback listeners because it has no remote authentication. Its REST endpoints are under `/api/v2`; committed browser-triggered sync updates are delivered with server-sent events at `/api/v2/events`.
+
+`ai-tracker clean --yes` creates a backup and clears telemetry plus checkpoints together. Prefer `ai-tracker sync --rebuild` for a recoverable refresh followed immediately by reimport.
+
+## Storage and privacy
+
+The database lives at `~/.config/ai-tracker/data.db` by default; set `AIT_DATA_DIR` to choose another directory. Data directories and backup directories use mode `0700`; databases, backups, and exports use `0600`.
+
+When an old `token_logs` database is first opened, AI Tracker creates a timestamped v1 backup under `~/.config/ai-tracker/backups/` before installing the v2 schema. V1 tables are retained for recovery but are not queried by v2 reports. `sync --rebuild` and `clean --yes` also create timestamped backups before clearing v2 data.
+
+AI Tracker stores token accounting, timestamps, source-backed session relationships, models, measurement quality, and hashed source/project identifiers. It does not store prompt bodies, transcript text, hook commands, environment values, or full source paths. Opt-in agy estimation counts transcript characters in memory and discards the text. Inventory exposes a basename and stable hash rather than a full path.
+
+## Development
+
+The project uses mise tasks:
 
 ```bash
-ait version
+mise run build
+mise run test
+mise run lint
 ```
 
----
+GitHub Actions builds the CLI, runs the complete tests, race detector, `go vet`, and `golangci-lint`, and applies the managed Secretlint scan with read-only repository permissions.
 
-## 🔒 Secret Redaction Engine
-
-`ai-tracker` prioritizes log privacy. Before any raw telemetry line is processed or stored in SQLite, `ingest.RedactSecrets()` pattern-matches and replaces sensitive keys with `[REDACTED]`:
-
-| Pattern / Key Type | Example Matched Format |
-|---|---|
-| **Anthropic API Keys** | `sk-ant-api*` |
-| **JSON Web Tokens (JWT)** | `eyJ...` |
-| **AWS Access Key ID** | `AKIA*` |
-| **Doppler Service Tokens** | `dp.pt.*` |
-
----
-
-## ⚡ High-Concurrency Ingestion (SQLite WAL)
-
-`ai-tracker` uses embedded `modernc.org/sqlite` with tuned PRAGMAs:
-```sql
-PRAGMA journal_mode=WAL;
-PRAGMA busy_timeout=5000;
-PRAGMA synchronous=NORMAL;
-```
-This enables simultaneous background log ingestion (`ait sync --watch`) alongside active queries from the REST API (`ait dashboard`) or CLI without encountering `database is locked` errors.
-
----
-
-## 🎨 Theme & Branding
-
-Designed with the **Catppuccin Frappe** color palette for optimal visual comfort in both terminal and web interfaces.
-
----
-
-## 📄 License
+## License
 
 [MIT](LICENSE) © Innovative Business Solutions
-

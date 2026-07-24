@@ -1,0 +1,5 @@
+{
+  "claude-3-5-sonnet-20241022": {"input": 3.0, "cacheRead": 0.3, "cacheWrite": 3.75, "output": 15.0},
+  "claude-3.5-sonnet": {"input": 3.0, "cacheRead": 0.3, "cacheWrite": 3.75, "output": 15.0},
+  "gemini-1.5-pro": {"input": 3.5, "cacheRead": 0.875, "cacheWrite": 3.5, "output": 10.5}
+}

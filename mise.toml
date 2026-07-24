@@ -4,7 +4,7 @@ go = "1.26.5"
 
 [tasks.build]
 description = "Build the ai-tracker CLI"
-run = "go build -o bin/ai-tracker main.go"
+run = "mkdir -p .build && go build -o .build/ai-tracker ."
 
 [tasks.test]
 description = "Run all tests"
@@ -19,5 +19,5 @@ description = "Run the application locally"
 run = "go run main.go"
 
 [tasks.clean]
-description = "Remove the bin directory"
-run = "rm -rf bin/"
+description = "Remove local build output"
+run = "rm -rf .build/"

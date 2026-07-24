@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"archive/zip"
+	"bytes"
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
@@ -10,175 +11,118 @@ import (
 	"strings"
 	"time"
 
+	coredb "github.com/spencer-life/ai-tracker/internal/db"
 	"github.com/spf13/cobra"
-	"github.com/spencer-life/ai-tracker/ingest"
-	"github.com/spencer-life/ai-tracker/internal/db"
 )
 
-var (
-	exportJson  bool
-	exportDays  int
-	exportAgent string
-	exportFrom  string
-	exportTo    string
-	exportCsv   bool
-	exportOut   string
-)
+type exportOptions struct {
+	reportFlags
+	csv bool
+	out string
+}
 
-var exportCmd = &cobra.Command{
-	Use:   "export",
-	Short: "Export telemetry data from the local SQLite DB",
-	Run: func(cmd *cobra.Command, args []string) {
-		dbConn, err := ingest.InitDB()
-		repo := ingest.NewRepository(dbConn)
+var exportCmd = func() *cobra.Command {
+	opts := exportOptions{}
+	cmd := &cobra.Command{Use: "export", Short: "Export the same filtered session data used by the dashboards", RunE: func(cmd *cobra.Command, args []string) error {
+		filter, err := opts.filter(time.Now())
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error initializing DB: %v\n", err)
-			os.Exit(1)
+			return err
 		}
-		defer dbConn.Close()
-
-		query := "SELECT id, agent, timestamp, model, input_tokens, output_tokens, cost FROM token_logs WHERE 1=1"
-		var queryArgs []interface{}
-
-		if exportDays > 0 {
-			timeAgo := time.Now().AddDate(0, 0, -exportDays)
-			query += " AND timestamp >= ?"
-			queryArgs = append(queryArgs, timeAgo)
-		}
-
-		if exportFrom != "" {
-			if t, err := time.Parse(time.RFC3339, exportFrom); err == nil {
-				query += " AND timestamp >= ?"
-				queryArgs = append(queryArgs, t)
-			} else if t, err := time.Parse("2006-01-02", exportFrom); err == nil {
-				query += " AND timestamp >= ?"
-				queryArgs = append(queryArgs, t)
-			}
-		}
-
-		if exportTo != "" {
-			if t, err := time.Parse(time.RFC3339, exportTo); err == nil {
-				query += " AND timestamp <= ?"
-				queryArgs = append(queryArgs, t)
-			} else if t, err := time.Parse("2006-01-02", exportTo); err == nil {
-				t = t.Add(23*time.Hour + 59*time.Minute + 59*time.Second)
-				query += " AND timestamp <= ?"
-				queryArgs = append(queryArgs, t)
-			}
-		}
-
-		if exportAgent != "" {
-			query += " AND agent = ?"
-			queryArgs = append(queryArgs, exportAgent)
-		}
-
-		rows, err := repo.GetDB().Query(query, queryArgs...)
+		repo, closeFn, err := openRepository()
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error querying DB: %v\n", err)
-			os.Exit(1)
+			return err
 		}
-		defer rows.Close()
-
-		var logs []db.TokenLog
-		for rows.Next() {
-			var log db.TokenLog
-			if err := rows.Scan(&log.ID, &log.Agent, &log.Timestamp, &log.Model, &log.Input, &log.Output, &log.Cost); err != nil {
-				fmt.Fprintf(os.Stderr, "Error scanning row: %v\n", err)
-				continue
-			}
-			logs = append(logs, log)
-		}
-
-		if err = rows.Err(); err != nil {
-			fmt.Fprintf(os.Stderr, "Row iteration error: %v\n", err)
-			os.Exit(1)
-		}
-
-		var output []byte
-		if exportCsv {
-			var buf strings.Builder
-			writer := csv.NewWriter(&buf)
-			writer.Write([]string{"ID", "Agent", "Timestamp", "Model", "InputTokens", "OutputTokens", "Cost"})
-			for _, log := range logs {
-				writer.Write([]string{
-					strconv.Itoa(log.ID),
-					log.Agent,
-					log.Timestamp.Format(time.RFC3339),
-					log.Model,
-					strconv.Itoa(log.Input),
-					strconv.Itoa(log.Output),
-					fmt.Sprintf("%f", log.Cost),
-				})
-			}
-			writer.Flush()
-			output = []byte(buf.String())
-		} else {
-			var err error
-			if exportJson {
-				output, err = json.MarshalIndent(logs, "", "  ")
-			} else {
-				output, err = json.Marshal(logs)
-			}
+		defer closeFn()
+		filter.Limit = 250
+		all := []coredb.Session{}
+		for {
+			page, err := repo.ListSessions(cmd.Context(), filter)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error encoding JSON: %v\n", err)
-				os.Exit(1)
+				return err
 			}
+			all = append(all, page.Sessions...)
+			if page.NextCursor == "" {
+				break
+			}
+			filter.Cursor = page.NextCursor
 		}
-
-		if exportOut != "" {
-			if strings.HasSuffix(strings.ToLower(exportOut), ".zip") {
-				zipFile, err := os.Create(exportOut)
-				if err != nil {
-					fmt.Fprintf(os.Stderr, "Error creating zip file: %v\n", err)
-					os.Exit(1)
+		var data []byte
+		if opts.csv {
+			var b bytes.Buffer
+			w := csv.NewWriter(&b)
+			if err := w.Write([]string{"id", "agent", "provider", "sourceSessionId", "updatedAt", "model", "measurement", "inputUncached", "cacheRead", "cacheWrite", "output", "reasoning", "total", "costMicros"}); err != nil {
+				return err
+			}
+			for _, s := range all {
+				cost := ""
+				if s.CostMicros != nil {
+					cost = strconv.FormatInt(*s.CostMicros, 10)
 				}
-				defer zipFile.Close()
-
-				zipWriter := zip.NewWriter(zipFile)
-
-				filename := "data.json"
-				if exportCsv {
-					filename = "data.csv"
-				}
-
-				f, err := zipWriter.Create(filename)
-				if err != nil {
-					zipWriter.Close()
-					fmt.Fprintf(os.Stderr, "Error creating zip entry: %v\n", err)
-					os.Exit(1)
-				}
-
-				_, err = f.Write(output)
-				if err != nil {
-					zipWriter.Close()
-					fmt.Fprintf(os.Stderr, "Error writing zip entry: %v\n", err)
-					os.Exit(1)
-				}
-				
-				if err := zipWriter.Close(); err != nil {
-					fmt.Fprintf(os.Stderr, "Error closing zip writer: %v\n", err)
-					os.Exit(1)
-				}
-			} else {
-				err := os.WriteFile(exportOut, output, 0644)
-				if err != nil {
-					fmt.Fprintf(os.Stderr, "Error writing file: %v\n", err)
-					os.Exit(1)
+				row := []string{s.ID, s.Agent, s.Provider, s.SourceSessionID, s.UpdatedAt.Format(time.RFC3339Nano), s.Model, string(s.Measurement), strconv.FormatInt(s.Tokens.InputUncached, 10), strconv.FormatInt(s.Tokens.CacheRead, 10), strconv.FormatInt(s.Tokens.CacheWrite, 10), strconv.FormatInt(s.Tokens.Output, 10), strconv.FormatInt(s.Tokens.Reasoning, 10), strconv.FormatInt(s.Tokens.Total, 10), cost}
+				if err := w.Write(row); err != nil {
+					return err
 				}
 			}
+			w.Flush()
+			if err := w.Error(); err != nil {
+				return err
+			}
+			data = b.Bytes()
 		} else {
-			fmt.Print(string(output))
+			if all == nil {
+				all = []coredb.Session{}
+			}
+			data, err = json.MarshalIndent(all, "", "  ")
+			if err != nil {
+				return err
+			}
+			data = append(data, '\n')
 		}
-	},
+		if opts.out == "" {
+			_, err = os.Stdout.Write(data)
+			return err
+		}
+		return writePrivateExport(opts.out, data, opts.csv)
+	}}
+	bindReportFlags(cmd, &opts.reportFlags)
+	cmd.Flags().BoolVar(&opts.csv, "csv", false, "export CSV instead of JSON")
+	cmd.Flags().StringVar(&opts.out, "out", "", "output path; .zip writes a compressed export")
+	return cmd
+}()
+
+func writePrivateExport(path string, data []byte, isCSV bool) error {
+	if strings.HasSuffix(strings.ToLower(path), ".zip") {
+		f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = f.Close() }()
+		zw := zip.NewWriter(f)
+		name := "sessions.json"
+		if isCSV {
+			name = "sessions.csv"
+		}
+		entry, err := zw.Create(name)
+		if err != nil {
+			_ = zw.Close()
+			return err
+		}
+		if _, err = entry.Write(data); err != nil {
+			_ = zw.Close()
+			return err
+		}
+		if err = zw.Close(); err != nil {
+			return err
+		}
+		return os.Chmod(path, 0o600)
+	}
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		return err
+	}
+	if err := os.Chmod(path, 0o600); err != nil {
+		return fmt.Errorf("secure export permissions: %w", err)
+	}
+	return nil
 }
 
-func init() {
-	exportCmd.Flags().BoolVar(&exportJson, "json", false, "Output as JSON")
-	exportCmd.Flags().IntVar(&exportDays, "days", 0, "Filter by last N days")
-	exportCmd.Flags().StringVar(&exportAgent, "agent", "", "Filter by agent name")
-	exportCmd.Flags().StringVar(&exportFrom, "from", "", "Filter by start date (YYYY-MM-DD or RFC3339)")
-	exportCmd.Flags().StringVar(&exportTo, "to", "", "Filter by end date (YYYY-MM-DD or RFC3339)")
-	exportCmd.Flags().BoolVar(&exportCsv, "csv", false, "Output as CSV")
-	exportCmd.Flags().StringVar(&exportOut, "out", "", "Output file path (use .zip for compressed archive)")
-	rootCmd.AddCommand(exportCmd)
-}
+func init() { rootCmd.AddCommand(exportCmd) }
