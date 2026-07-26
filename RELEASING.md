@@ -13,19 +13,24 @@ Releases are built by GitHub Actions from an annotated `v*` tag. The workflow te
    go test -race ./...
    go vet ./...
    mise run lint
+   scripts/test-ait-wrapper.sh
    goreleaser check
    goreleaser release --snapshot --clean
+   scripts/verify-release-archives.sh dist
    ```
 
-4. Verify at least one snapshot archive against `checksums.txt`, then extract it and run `ai-tracker version` from the extracted binary.
-5. Commit and push `main`, create an annotated tag such as `v1.1.0`, and push the tag.
+4. Verify at least one snapshot archive against `checksums.txt`, then extract it and run both `ait version` and `ai-tracker version`.
+5. Commit and push `main`, create an annotated tag such as `v1.1.1`, and push the tag.
 6. Watch the `Release` workflow until both `verify` and `release` succeed.
 7. Verify the published `checksums.txt`, Linux and macOS archives, release notes, and embedded version.
 8. Test a clean managed install:
 
    ```bash
-   mise use -g github:spencer-life/ai-tracker@v1.1.0
+   mise use -g github:spencer-life/ai-tracker@v1.1.1
+   mise reshim
+   mise which ait
    mise which ai-tracker
+   ait version
    ai-tracker version
    ```
 

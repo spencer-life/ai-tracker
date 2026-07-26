@@ -33,6 +33,10 @@ archives:
       - LICENSE
       - README.md
       - ai-tracker-guide.html
+      - src: scripts/ait
+        strip_parent: true
+        info:
+          mode: 0755
       - skills/ai-tracker/SKILL.md
       - skills/ai-tracker/agents/openai.yaml
 checksum:

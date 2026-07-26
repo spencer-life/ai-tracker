@@ -4,7 +4,7 @@ go = "1.26.5"
 
 [tasks.build]
 description = "Build the ai-tracker CLI"
-run = "mkdir -p .build && go build -o .build/ai-tracker ."
+run = "mkdir -p .build && go build -o .build/ai-tracker . && install -m 0755 scripts/ait .build/ait"
 
 [tasks.test]
 description = "Run all tests"

@@ -35,6 +35,9 @@ jobs:
       - name: Build
         run: go build ./...
 
+      - name: Test ait wrapper
+        run: scripts/test-ait-wrapper.sh
+
       - name: Race test
         run: go test -race ./...
 

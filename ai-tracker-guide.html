@@ -24,17 +24,18 @@
   <header>
     <p>Local, source-backed usage analytics</p>
     <h1>AI Tracker</h1>
-    <p><code>ai-tracker</code> combines a Go CLI, terminal UI, and loopback-only browser dashboard for Codex, Claude Code, and agy sessions.</p>
+    <p><code>ait</code> is the short command for a Go CLI, terminal UI, and loopback-only browser dashboard covering Codex, Claude Code, and agy sessions. The canonical <code>ai-tracker</code> command remains supported.</p>
     <nav aria-label="Guide"><a href="#install">Install</a><a href="#sources">Sources</a><a href="#commands">Commands</a><a href="#interfaces">Interfaces</a><a href="#privacy">Privacy</a></nav>
   </header>
 
   <section id="install">
     <h2>Install a release binary</h2>
-<pre><code>mise use -g github:spencer-life/ai-tracker@v1.1.0
-ai-tracker version
-ai-tracker sync --rebuild</code></pre>
+<pre><code>mise use -g github:spencer-life/ai-tracker@v1.1.1
+mise reshim
+ait version
+ait sync --rebuild</code></pre>
     <p>Release archives support Linux/WSL and macOS on x86-64 and ARM64. Windows users run the Linux release inside WSL. The one-time rebuild is required when upgrading from v1.0.0 and creates a timestamped database backup first.</p>
-    <p>To follow and install the newest stable release, run <code>mise use -g github:spencer-life/ai-tracker@latest</code>, then use <code>mise upgrade github:spencer-life/ai-tracker</code> for later updates. To remove it, run <code>mise use -g --remove github:spencer-life/ai-tracker</code> followed by <code>mise uninstall github:spencer-life/ai-tracker</code>. Manual downloads and <code>checksums.txt</code> are available from GitHub Releases; verify before extraction with <code>sha256sum -c checksums.txt --ignore-missing</code> on Linux or <code>shasum -a 256 &lt;archive&gt;</code> on macOS.</p>
+    <p>Without mise, download the matching archive and <code>checksums.txt</code> from GitHub Releases, verify the selected archive with <code>sha256sum</code> on Linux or <code>shasum -a 256</code> on macOS, extract it, then install both root executables with <code>install -m 0755 ai-tracker ait ~/.local/bin/</code>. With mise, use <code>mise upgrade github:spencer-life/ai-tracker</code> and <code>mise reshim</code> for later updates.</p>
     <p>The archive also bundles the Codex skill under <code>skills/ai-tracker</code>. Copy that directory to <code>$CODEX_HOME/skills/ai-tracker</code> and restart Codex for a manual skill install.</p>
   </section>
 
@@ -48,45 +49,45 @@ ai-tracker sync --rebuild</code></pre>
         <tr><td>agy</td><td><code>~/.gemini/antigravity-cli/</code> summary and conversation databases</td><td>Source-backed session/subtrajectory metadata. Authoritative token totals are not locally available.</td></tr>
       </tbody>
     </table>
-    <p class="callout">Agy transcript estimates are opt-in. Run <code>ai-tracker sync --include-estimates</code> to import them and add <code>--include-estimates</code> to a report to display them. They remain labelled <code>estimated</code>.</p>
+    <p class="callout">Agy transcript estimates are opt-in. Run <code>ait sync --include-estimates</code> to import them and add <code>--include-estimates</code> to a report to display them. They remain labelled <code>estimated</code>.</p>
     <p>Usage carries a <code>reported</code>, <code>derived</code>, <code>estimated</code>, or <code>legacy</code> quality label. Normal totals exclude estimates. Costs separately price uncached input, cache reads, cache writes, and output from an embedded vendor/ccusage-derived snapshot. Current Codex/OpenAI, Claude Opus 5, Fable 5, Sonnet 5, Gemini 3.6 Flash, and Gemini 3.1 Pro models are covered, including verified long-context tiers. Claude 5-minute and 1-hour cache writes are distinct when the source reports the breakdown; aggregate-only older rows use the 5-minute rate. Aggregate views exclude unknown-price events and show pricing coverage. These are standard API-equivalent estimates, not subscription, priority/fast-tier, storage, or tool billing. Rebuild after pricing/parser updates to reprice historical events.</p>
   </section>
 
   <section id="commands">
     <h2>Command reference</h2>
 <pre><code># Import or rebuild
-ai-tracker version
-ai-tracker sync
-ai-tracker sync --watch
-ai-tracker sync --rebuild
+ait version
+ait sync
+ait sync --watch
+ait sync --rebuild
 
 # Totals, calendar buckets, and sessions
-ai-tracker usage --range 30d
-ai-tracker daily --range 7d --tz America/Phoenix --json
-ai-tracker weekly --range mtd --json
-ai-tracker monthly --range custom --from 2026-01-01 --to 2026-07-01 --json
-ai-tracker sessions --range 30d --agent codex
+ait usage --range 30d
+ait daily --range 7d --tz America/Phoenix --json
+ait weekly --range mtd --json
+ait monthly --range custom --from 2026-01-01 --to 2026-07-01 --json
+ait sessions --range 30d --agent codex
 
 # Diagnostics and customization metadata
-ai-tracker doctor
-ai-tracker inventory
-ai-tracker completion zsh
+ait doctor
+ait inventory
+ait completion zsh
 
 # Machine-readable output and exports
-ai-tracker usage --range 30d --json
-ai-tracker export --range 7d --csv --out usage.zip
+ait usage --range 30d --json
+ait export --range 7d --csv --out usage.zip
 
 # Interfaces
-ai-tracker tui
-ai-tracker dashboard --open</code></pre>
+ait tui
+ait dashboard --open</code></pre>
     <p>Report and export filters include <code>--range today|7d|30d|mtd|custom</code>, <code>--from</code>, <code>--to</code>, <code>--tz</code>, <code>--agent</code>, <code>--provider</code>, <code>--model</code>, <code>--quality</code>, <code>--include-estimates</code>, and <code>--limit</code>. Date ranges are half-open: the start is included and the end is excluded. Weekly buckets begin Monday. Human-readable report output is a range summary; the JSON form of <code>daily</code>, <code>weekly</code>, and <code>monthly</code> includes the selected bucketed series.</p>
-    <p><code>ai-tracker sync --rebuild</code> creates a timestamped backup, clears all telemetry and checkpoints, and reimports canonical sources. Legacy rows survive in the backup rather than the rebuilt database. <code>ai-tracker clean --yes</code> also backs up before clearing, but does not reimport. Sync health reports usage events committed, session records committed, sources skipped, and actual source errors separately from informational diagnostics.</p>
+    <p><code>ait sync --rebuild</code> creates a timestamped backup, clears all telemetry and checkpoints, and reimports canonical sources. Legacy rows survive in the backup rather than the rebuilt database. <code>ait clean --yes</code> also backs up before clearing, but does not reimport. Sync health reports usage events committed, session records committed, sources skipped, and actual source errors separately from informational diagnostics.</p>
   </section>
 
   <section id="interfaces">
     <h2>TUI and browser dashboard</h2>
-    <p><code>ai-tracker tui</code> shows 30-day Overview, Trends, Sessions, Agents/Models, Inventory, and Data Health views. Use number keys or arrows to change tabs, <code>r</code> to refresh, and <code>q</code> to quit.</p>
-    <p><code>ai-tracker dashboard</code> performs an initial sync unless <code>--no-sync</code> is set, then serves the embedded dashboard on <code>127.0.0.1:8080</code>. Only loopback hosts are accepted because the server has no remote authentication. The local API is under <code>/api/v2</code>; browser-triggered committed sync updates use server-sent events at <code>/api/v2/events</code>.</p>
+    <p><code>ait tui</code> shows 30-day Overview, Trends, Sessions, Agents/Models, Inventory, and Data Health views. Use number keys or arrows to change tabs, <code>r</code> to refresh, and <code>q</code> to quit.</p>
+    <p><code>ait dashboard</code> performs an initial sync unless <code>--no-sync</code> is set, then serves the embedded dashboard on <code>127.0.0.1:8080</code>. Only loopback hosts are accepted because the server has no remote authentication. The local API is under <code>/api/v2</code>; browser-triggered committed sync updates use server-sent events at <code>/api/v2/events</code>.</p>
     <p>The dashboard includes range/timezone/model/provider/agent/quality filters, daily token charts with a table fallback, session pagination, breakdowns, inventory, and sync health.</p>
   </section>
 

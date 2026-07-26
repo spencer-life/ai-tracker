@@ -1,0 +1,9 @@
+#!/bin/sh
+set -eu
+
+script_dir=$(cd -- "$(dirname -- "$0")" && pwd)
+if [ -x "$script_dir/ai-tracker" ]; then
+	exec "$script_dir/ai-tracker" "$@"
+fi
+
+exec ai-tracker "$@"
