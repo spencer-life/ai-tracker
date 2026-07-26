@@ -4,133 +4,139 @@
 [![Release](https://img.shields.io/github/v/release/spencer-life/ai-tracker)](https://github.com/spencer-life/ai-tracker/releases/latest)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-`ait` turns local Codex, Claude Code, and Antigravity (`agy`) records into source-backed session, token, model, quality, and API-equivalent cost analytics—without inventing missing telemetry.
+[![Built with Go, SQLite, and GitHub Actions](https://skillicons.dev/icons?i=go,sqlite,githubactions&perline=3)](https://github.com/tandpfun/skill-icons)
 
-## Quick start
+`ait` turns local Codex, Claude Code, and Antigravity (`agy`) records into source-backed session, token, model, quality, and API-equivalent cost analytics. Missing telemetry is never replaced with fake data.
 
-### Install with mise
+## Install
+
+Choose whichever method fits your setup.
+
+### mise
+
+Recommended if you already use [mise](https://mise.jdx.dev):
 
 ```bash
-mise use -g github:spencer-life/ai-tracker@v1.1.1
+mise use -g \
+  github:spencer-life/ai-tracker@latest
 mise reshim
 ait version
 ```
 
-### Install the release binary without mise
+### Go
 
-Linux/WSL x86-64:
-
-```bash
-archive=ai-tracker_Linux_x86_64.tar.gz
-curl -fLO "https://github.com/spencer-life/ai-tracker/releases/latest/download/$archive"
-curl -fLO https://github.com/spencer-life/ai-tracker/releases/latest/download/checksums.txt
-grep "  $archive$" checksums.txt | sha256sum -c -
-tar -xzf "$archive"
-mkdir -p ~/.local/bin
-install -m 0755 ai-tracker ait ~/.local/bin/
-export PATH="$HOME/.local/bin:$PATH"
-ait version
-```
-
-Use `ai-tracker_Linux_arm64.tar.gz`, `ai-tracker_Darwin_x86_64.tar.gz`, or `ai-tracker_Darwin_arm64.tar.gz` for other supported systems. On macOS, replace the checksum line with:
+With Go 1.26.5 or newer:
 
 ```bash
-grep "  $archive$" checksums.txt | shasum -a 256 -c -
+go install \
+  github.com/spencer-life/ai-tracker@latest
+ai-tracker version
 ```
 
-Then import your local history and open a view:
+Go installs the canonical `ai-tracker` executable, but not the optional Codex skill. It goes to `$GOBIN` when set, otherwise `$(go env GOPATH)/bin`. Use `ai-tracker` anywhere this README shows the release shortcut `ait`.
+
+### Release archive
+
+[Download the latest release](https://github.com/spencer-life/ai-tracker/releases/latest) for Linux/WSL or macOS on x86-64 or ARM64. Each archive includes both `ait` and `ai-tracker`, plus the optional Codex skill; [all releases](https://github.com/spencer-life/ai-tracker/releases) and `checksums.txt` are available on GitHub.
+
+Verify the archive with `checksums.txt`, extract it, and place `ait` and `ai-tracker` in a directory on `PATH`, such as `~/.local/bin`.
+
+Windows users should run the Linux release inside WSL.
+
+## Quick start
+
+Import local history, then open the browser dashboard:
 
 ```bash
 ait sync
 ait dashboard
 ```
 
-`ai-tracker` remains available as the canonical compatibility command. Upgrading from v1.0.0 requires one `ait sync --rebuild`; it creates a timestamped backup before rebuilding.
+The browser opens at `http://127.0.0.1:8080`. It stays loopback-only because it has no authentication.
 
 ## How it works
 
 ```mermaid
-flowchart LR
-  subgraph Sources["Canonical local sources"]
-    C["Codex JSONL<br/>Desktop + WSL"]
-    L["Claude project JSONL"]
-    A["agy SQLite<br/>optional transcript estimates"]
-  end
-
-  S["ait sync"]
-  D[("Private local SQLite")]
-  C --> S
-  L --> S
-  A --> S
-  S --> D
-
-  D --> R["Reports + JSON"]
-  D --> T["Terminal UI"]
-  D --> W["Loopback web dashboard"]
-  D --> E["Private exports"]
+flowchart TD
+  A["Codex · Claude · agy<br/>local records"]
+  B["ait sync"]
+  C[("Private local SQLite")]
+  D["Dashboard · TUI<br/>reports · exports"]
+  A --> B --> C --> D
 ```
 
-## Choose a view
+The source records remain authoritative. AI Tracker stores normalized telemetry locally so every interface reads the same data.
 
-| Goal | Command |
-| --- | --- |
-| Browser dashboard | `ait dashboard` |
-| Terminal dashboard | `ait tui` |
-| 30-day summary | `ait usage --range 30d` |
-| Recent Codex sessions | `ait sessions --range 30d --agent codex` |
-| Daily JSON series | `ait daily --range 7d --json` |
-| Data health | `ait doctor` |
-| Skills, hooks, and agents | `ait inventory` |
-| Private CSV export | `ait export --range 30d --csv --out usage.csv` |
+## Common commands
 
-For mobile access through an SSH tunnel, run `ait dashboard --host 127.0.0.1 --port 8080`, forward client-local port `8080` to destination `127.0.0.1:8080`, then open `http://127.0.0.1:8080` on the client device. The dashboard intentionally rejects non-loopback listeners because it has no authentication.
+- **Browser dashboard:** `ait dashboard`
+- **Terminal dashboard:** `ait tui`
+- **30-day summary:** `ait usage --range 30d`
+- **Recent Codex sessions:** `ait sessions --range 30d --agent codex`
+- **Daily JSON series:** `ait daily --range 7d --json`
+- **Data health:** `ait doctor`
+- **Skills, hooks, and agents:** `ait inventory`
+- **Private CSV export:** `ait export --range 30d --csv --out usage.csv`
 
-## Sources and coverage
+<details>
+<summary>Open the dashboard on a phone through an SSH tunnel</summary>
 
-| Source | Sessions | Tokens | Notes |
-| --- | --- | --- | --- |
-| Codex | Yes | Reported | Active configured/Desktop store plus distinct native WSL archive; same-named rollout copies are deduplicated |
-| Claude Code | Yes | Reported | Assistant usage records, including cache-read and cache-creation tokens |
-| agy | Yes | Not authoritative | Character-derived transcript estimates require explicit `--include-estimates` opt-in |
+Start the server in WSL:
 
-Every event is labelled `reported`, `derived`, `estimated`, or `legacy`. Estimated usage is excluded unless requested.
+```bash
+ait dashboard \
+  --host 127.0.0.1 \
+  --port 8080
+```
 
-## Trust and cost model
+In Termius or another SSH client, forward client-local port `8080` to destination `127.0.0.1:8080`, then open `http://127.0.0.1:8080` on the client device.
+
+</details>
+
+## Accuracy and coverage
+
+- **Codex:** reported tokens from the active configured/Desktop store plus the distinct native WSL archive. Same-named copied rollouts are deduplicated.
+- **Claude Code:** reported assistant usage, including cache-read and cache-creation tokens.
+- **agy:** session metadata by default. Character-derived transcript estimates require explicit `--include-estimates` opt-in.
+
+Every usage event is labelled `reported`, `derived`, `estimated`, or `legacy`. Estimated usage is excluded unless requested.
+
+## Cost model
 
 ```mermaid
 flowchart TD
-  E["Source event"] --> Q{"Authoritative token data?"}
-  Q -->|Yes| M["reported / derived"]
-  Q -->|No; agy opt-in| X["estimated"]
-  Q -->|No estimate requested| S["session metadata only"]
-
-  M --> P{"Known model price?"}
-  P -->|Yes| C["API-equivalent priced subtotal"]
-  P -->|No| U["Unpriced coverage<br/>never silently $0"]
-
-  X --> I{"--include-estimates?"}
-  I -->|Yes| V["Included and labelled"]
-  I -->|No| O["Excluded by default"]
+  A["Source usage event"]
+  B["Quality label"]
+  C["Separate token buckets"]
+  D["Model + date pricing"]
+  E["API-equivalent estimate<br/>with coverage shown"]
+  A --> B --> C --> D --> E
 ```
 
-- Missing models and token splits are never fabricated.
-- Uncached input, cache read, cache write, and output are priced separately; reasoning is not billed twice.
-- Unknown-price events remain unpriced and appear in coverage instead of being treated as free.
-- Totals are standard API-equivalent estimates—not subscription invoices. Priority/fast tiers, storage, tools, and plan fees are excluded.
+- Input, cache read, cache write, output, and reasoning are tracked separately.
+- Missing models or token splits are never invented.
+- Unknown-price events remain unpriced instead of being treated as free.
+- Totals are standard API-equivalent estimates—not subscription invoices.
+- Priority/fast tiers, storage, tools, and plan fees are excluded.
 
-The offline snapshot covers current observed OpenAI/Codex models, Claude Opus 5, Fable 5, Sonnet 5 and 4.x models, Gemini 3.6 Flash (including agy's `-high` alias), Gemini 3.1 Pro, and selected older models. It preserves Claude cache-write durations, verified long-context tiers, and date-aware pricing. Rebuild after pricing updates to reprice source events.
+<details>
+<summary>Pricing catalog and limitations</summary>
+
+The offline catalog includes observed aliases for OpenAI/Codex models, Claude Opus 5, Fable 5, Sonnet 5 and 4.x models, Gemini 3.6 Flash, and Gemini 3.1 Pro. It preserves Claude cache-write durations, verified long-context tiers, and date-aware pricing. Rebuild after a pricing update to reprice source events.
 
 Pricing was checked on 2026-07-25 against [OpenAI](https://developers.openai.com/api/docs/models), [Anthropic](https://platform.claude.com/docs/en/about-claude/pricing), [Gemini](https://ai.google.dev/gemini-api/docs/pricing), and [ccusage v20.0.18](https://github.com/ccusage/ccusage/blob/v20.0.18/rust/crates/ccusage/src/pricing.rs).
 
+</details>
+
 ## Storage and privacy
 
-| Stored locally | Never stored |
-| --- | --- |
-| Token categories, timestamps, model, quality, session relationships, and hashed identifiers | Prompts, transcript text, hook commands, environment values, and full source paths |
+**Stored locally:** token categories, timestamps, model, quality, session relationships, and hashed identifiers.
 
-The default database is `~/.config/ai-tracker/data.db`; set `AIT_DATA_DIR` to relocate it. Data and backup directories use mode `0700`; databases, backup files, and exports use `0600` on Linux/WSL and macOS.
+**Never stored:** prompts, transcript text, hook commands, environment values, or full source paths.
 
-Legacy v1 migration creates a timestamped backup before changing tables. `sync --rebuild` and `clean --yes` back up before clearing data. Inventory reads bounded metadata from global configuration and the current repository ancestry; it never executes discovered components.
+The default database is `~/.config/ai-tracker/data.db`; set `AIT_DATA_DIR` to relocate it. Data and backup directories use mode `0700`; databases, backups, and exports use `0600` on Linux/WSL and macOS.
+
+Legacy v1 migration, `sync --rebuild`, and `clean --yes` create a timestamped backup before changing or clearing data. Inventory reads bounded metadata from global configuration and the current repository ancestry; it never executes discovered components.
 
 ## Command reference
 
@@ -145,6 +151,8 @@ ait sync --include-estimates
 ait doctor --json
 ```
 
+Coming from v1.0.0? Run one `ait sync --rebuild` after upgrading. It backs up the existing database before rebuilding it.
+
 </details>
 
 <details>
@@ -152,10 +160,16 @@ ait doctor --json
 
 ```bash
 ait usage --range 30d
-ait daily --range 7d --tz America/Phoenix --json
+ait daily --range 7d \
+  --tz America/Phoenix \
+  --json
 ait weekly --range mtd --json
-ait monthly --range custom --from 2026-01-01 --to 2026-07-01 --json
-ait sessions --range 30d --agent codex
+ait monthly --range custom \
+  --from 2026-01-01 \
+  --to 2026-07-01 \
+  --json
+ait sessions --range 30d \
+  --agent codex
 ```
 
 Reports accept `--range today|7d|30d|mtd|custom`, `--from`, `--to`, `--tz`, `--agent`, `--provider`, `--model`, `--quality`, `--include-estimates`, `--limit`, and `--json`. Ranges are half-open; weeks start Monday.
@@ -163,15 +177,18 @@ Reports accept `--range today|7d|30d|mtd|custom`, `--from`, `--to`, `--tz`, `--a
 </details>
 
 <details>
-<summary>Export and interfaces</summary>
+<summary>Exports and interfaces</summary>
 
 ```bash
 ait export --range 7d
-ait export --range 30d --csv --out usage.csv
-ait export --agent claude --csv --out claude.zip
+ait export --range 30d --csv \
+  --out usage.csv
+ait export --agent claude \
+  --csv --out claude.zip
 ait tui
 ait dashboard --open
-ait dashboard --port 9090 --no-sync
+ait dashboard --port 9090 \
+  --no-sync
 ```
 
 Exports use mode `0600`; a `.zip` suffix creates a compressed archive. The loopback dashboard exposes `/api/v2` and committed-sync events at `/api/v2/events`.
@@ -180,26 +197,38 @@ Exports use mode `0600`; a `.zip` suffix creates a compressed archive. The loopb
 
 Run `ait <command> --help` for the complete command surface.
 
-## Installation, updates, and skill
+## Updates and Codex skill
 
-Release archives support Linux/WSL and macOS on x86-64 and ARM64. Windows users run the Linux binary inside WSL.
+<details>
+<summary>Manage a mise installation</summary>
+
+Update:
 
 ```bash
-mise upgrade github:spencer-life/ai-tracker
+mise upgrade \
+  github:spencer-life/ai-tracker
 mise reshim
 ```
 
-<details>
-<summary>Remove a mise-managed installation</summary>
+Remove:
 
 ```bash
-mise use -g --remove github:spencer-life/ai-tracker
-mise uninstall github:spencer-life/ai-tracker
+mise use -g --remove \
+  github:spencer-life/ai-tracker
+mise uninstall \
+  github:spencer-life/ai-tracker
 ```
 
 </details>
 
-Each archive includes the AI Tracker Codex skill. Copy `skills/ai-tracker` to `$CODEX_HOME/skills/ai-tracker`, then restart Codex. Mise's GitHub backend discovers both executable files in the release root; see its [binary discovery documentation](https://mise.jdx.dev/dev-tools/backends/github.html#bin-path).
+<details>
+<summary>Install the bundled Codex skill</summary>
+
+Copy `skills/ai-tracker` from a release archive to `$CODEX_HOME/skills/ai-tracker`, then restart Codex.
+
+</details>
+
+`ai-tracker` is the canonical binary name; release archives and mise also provide the shorter `ait` wrapper.
 
 ## Development and releases
 
