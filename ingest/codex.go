@@ -12,7 +12,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"reflect"
 	"sort"
 	"strings"
 	"time"
@@ -20,7 +19,7 @@ import (
 	coredb "github.com/spencer-life/ai-tracker/internal/db"
 )
 
-const codexParserVersion = "codex-rollout-v2"
+const codexParserVersion = "codex-rollout-v2.1"
 
 type codexEnvelope struct {
 	Timestamp string          `json:"timestamp"`
@@ -32,9 +31,15 @@ type codexSessionMeta struct {
 	ID             string          `json:"id"`
 	SessionID      string          `json:"session_id"`
 	ParentThreadID string          `json:"parent_thread_id"`
+	ForkedFromID   string          `json:"forked_from_id"`
+	ThreadSource   string          `json:"thread_source"`
 	Timestamp      string          `json:"timestamp"`
 	CWD            string          `json:"cwd"`
 	Source         json.RawMessage `json:"source"`
+}
+
+type codexInterAgentMetadata struct {
+	TriggerTurn bool `json:"trigger_turn"`
 }
 
 type codexTurnContext struct {
@@ -70,33 +75,46 @@ type codexFileResult struct {
 // state_5.sqlite is intentionally not consulted for usage because its
 // threads.tokens_used value has no trustworthy token-category breakdown.
 func ingestCodex(ctx context.Context, repo *Repository, home string) (sourceResult, error) {
-	root := filepath.Join(home, ".codex", "sessions")
 	paths := make([]string, 0)
-	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-		if entry.IsDir() {
-			return nil
-		}
-		if strings.HasPrefix(entry.Name(), "rollout-") && strings.HasSuffix(entry.Name(), ".jsonl") {
+	seenRollouts := make(map[string]string)
+	var result sourceResult
+	var sourceErrors []error
+	for _, codexHome := range resolveCodexHomes(home) {
+		root := filepath.Join(codexHome, "sessions")
+		err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
+			if walkErr != nil {
+				return walkErr
+			}
+			if entry.IsDir() {
+				return nil
+			}
+			if !strings.HasPrefix(entry.Name(), "rollout-") || !strings.HasSuffix(entry.Name(), ".jsonl") {
+				return nil
+			}
+			if preferred, exists := seenRollouts[entry.Name()]; exists {
+				result.diagnostics = append(result.diagnostics, "codex: ignored duplicate rollout "+entry.Name()+" from secondary store; preferred "+filepath.Base(filepath.Dir(filepath.Dir(filepath.Dir(filepath.Dir(preferred)))))+" store")
+				return nil
+			}
+			seenRollouts[entry.Name()] = path
 			paths = append(paths, path)
+			return nil
+		})
+		if errors.Is(err, fs.ErrNotExist) {
+			continue
 		}
-		return nil
-	})
-	if errors.Is(err, fs.ErrNotExist) {
-		return sourceResult{}, nil
-	}
-	if err != nil {
-		return sourceResult{}, fmt.Errorf("walk Codex rollouts: %w", err)
+		if err != nil {
+			sourceErrors = append(sourceErrors, fmt.Errorf("walk Codex rollouts in %s: %w", filepath.Base(codexHome), err))
+		}
 	}
 	sort.Strings(paths)
 
-	var result sourceResult
 	for _, path := range paths {
 		parsed, err := parseCodexRollout(ctx, repo, path)
 		if err != nil {
-			return result, fmt.Errorf("parse Codex rollout %s: %w", filepath.Base(path), err)
+			wrapped := fmt.Errorf("parse Codex rollout %s: %w", filepath.Base(path), err)
+			sourceErrors = append(sourceErrors, wrapped)
+			result.diagnostics = append(result.diagnostics, "codex: skipped unreadable rollout "+filepath.Base(path))
+			continue
 		}
 		if parsed.skipped {
 			result.skipped++
@@ -104,13 +122,16 @@ func ingestCodex(ctx context.Context, repo *Repository, home string) (sourceResu
 		}
 		inserted, updated, err := repo.ApplyBatch(ctx, parsed.batch)
 		if err != nil {
-			return result, fmt.Errorf("commit Codex rollout %s: %w", filepath.Base(path), err)
+			wrapped := fmt.Errorf("commit Codex rollout %s: %w", filepath.Base(path), err)
+			sourceErrors = append(sourceErrors, wrapped)
+			result.diagnostics = append(result.diagnostics, "codex: skipped uncommitted rollout "+filepath.Base(path))
+			continue
 		}
 		result.inserted += inserted
 		result.updated += updated
 		result.diagnostics = append(result.diagnostics, parsed.diagnostics...)
 	}
-	return result, nil
+	return result, errors.Join(sourceErrors...)
 }
 
 func parseCodexRollout(ctx context.Context, repo *Repository, path string) (codexFileResult, error) {
@@ -134,6 +155,8 @@ func parseCodexRollout(ctx context.Context, repo *Repository, path string) (code
 	defer func() { _ = file.Close() }()
 
 	var session SessionRecord
+	var parentSourceID string
+	var copiedParentPrefix, childUsageStarted bool
 	var currentModel, currentTurn, currentCWD string
 	var previousCumulative, previousUsage string
 	var firstAt, lastAt int64
@@ -175,13 +198,23 @@ func parseCodexRollout(ctx context.Context, repo *Repository, path string) (code
 				if sourceID == "" {
 					return codexFileResult{}, fmt.Errorf("missing session identity at byte %d", lineStart)
 				}
+				if session.ID != "" {
+					if parentSourceID != "" && sourceID == parentSourceID {
+						copiedParentPrefix = true
+					}
+					break
+				}
+				parentSourceID = meta.ParentThreadID
+				if parentSourceID == "" {
+					parentSourceID = meta.ForkedFromID
+				}
 				session = SessionRecord{
 					ID:              codexSessionID(sourceID),
 					Agent:           "codex",
 					Provider:        "openai",
 					SourceSessionID: sourceID,
-					ParentSessionID: codexOptionalSessionID(meta.ParentThreadID),
-					IsSubagent:      meta.ParentThreadID != "",
+					ParentSessionID: codexOptionalSessionID(parentSourceID),
+					IsSubagent:      parentSourceID != "" || meta.ThreadSource == "subagent",
 					Project:         codexOptionalHash(meta.CWD),
 					Status:          "unknown",
 					SourceKind:      "rollout_jsonl",
@@ -197,6 +230,16 @@ func parseCodexRollout(ctx context.Context, repo *Repository, path string) (code
 					session.StartedAtMS = at
 				}
 				currentCWD = meta.CWD
+			case "inter_agent_communication_metadata":
+				if copiedParentPrefix {
+					var metadata codexInterAgentMetadata
+					if err := json.Unmarshal(envelope.Payload, &metadata); err != nil {
+						return codexFileResult{}, fmt.Errorf("invalid inter-agent metadata at byte %d: %w", lineStart, err)
+					}
+					if metadata.TriggerTurn {
+						childUsageStarted = true
+					}
+				}
 			case "turn_context":
 				var turn codexTurnContext
 				if err := json.Unmarshal(envelope.Payload, &turn); err != nil {
@@ -212,6 +255,9 @@ func parseCodexRollout(ctx context.Context, repo *Repository, path string) (code
 					return codexFileResult{}, fmt.Errorf("invalid event at byte %d: %w", lineStart, err)
 				}
 				if count.Type != "token_count" || count.Info == nil || count.Info.Last == nil {
+					break
+				}
+				if copiedParentPrefix && !childUsageStarted {
 					break
 				}
 				usageFingerprint := count.Info.Last.fingerprint()
@@ -372,15 +418,5 @@ func codexOptionalHash(value string) string {
 }
 
 func codexFileIdentity(info os.FileInfo) (device, inode uint64) {
-	value := reflect.Indirect(reflect.ValueOf(info.Sys()))
-	if !value.IsValid() || value.Kind() != reflect.Struct {
-		return 0, 0
-	}
-	if field := value.FieldByName("Dev"); field.IsValid() && field.CanUint() {
-		device = field.Uint()
-	}
-	if field := value.FieldByName("Ino"); field.IsValid() && field.CanUint() {
-		inode = field.Uint()
-	}
-	return device, inode
+	return fileIdentity(info)
 }

@@ -82,6 +82,22 @@ const aggregateColumns = `
 	COALESCE(SUM(CASE WHEN ue.measurement='estimated' THEN ue.total_tokens ELSE 0 END),0),
 	COALESCE(SUM(CASE WHEN ue.measurement='legacy' THEN ue.total_tokens ELSE 0 END),0)`
 
+const summaryAggregateColumns = `
+	COALESCE(SUM(ue.input_uncached),0), COALESCE(SUM(ue.cache_read),0),
+	COALESCE(SUM(ue.cache_write),0), COALESCE(SUM(ue.output_tokens),0),
+	COALESCE(SUM(ue.reasoning_output),0), COALESCE(SUM(ue.total_tokens),0),
+	CASE WHEN SUM(CASE WHEN ue.total_tokens>0 AND ue.cost_micros IS NOT NULL THEN 1 ELSE 0 END)>0
+		THEN COALESCE(SUM(ue.cost_micros),0) ELSE NULL END,
+	COUNT(*), COUNT(DISTINCT ue.session_id),
+	COALESCE(SUM(CASE WHEN ue.measurement='reported' THEN ue.total_tokens ELSE 0 END),0),
+	COALESCE(SUM(CASE WHEN ue.measurement='derived' THEN ue.total_tokens ELSE 0 END),0),
+	COALESCE(SUM(CASE WHEN ue.measurement='estimated' THEN ue.total_tokens ELSE 0 END),0),
+	COALESCE(SUM(CASE WHEN ue.measurement='legacy' THEN ue.total_tokens ELSE 0 END),0),
+	COALESCE(SUM(CASE WHEN ue.cost_micros IS NOT NULL THEN ue.total_tokens ELSE 0 END),0),
+	COALESCE(SUM(CASE WHEN ue.cost_micros IS NULL THEN ue.total_tokens ELSE 0 END),0),
+	COALESCE(SUM(CASE WHEN ue.total_tokens>0 AND ue.cost_micros IS NOT NULL THEN 1 ELSE 0 END),0),
+	COALESCE(SUM(CASE WHEN ue.total_tokens>0 AND ue.cost_micros IS NULL THEN 1 ELSE 0 END),0)`
+
 const sessionAggregateColumns = `
 	COALESCE(SUM(ue.input_uncached),0),COALESCE(SUM(ue.cache_read),0),
 	COALESCE(SUM(ue.cache_write),0),COALESCE(SUM(ue.output_tokens),0),
@@ -94,8 +110,8 @@ const sessionAggregateColumns = `
 	COALESCE(SUM(CASE WHEN ue.measurement='estimated' THEN ue.total_tokens ELSE 0 END),0),
 	COALESCE(SUM(CASE WHEN ue.measurement='legacy' THEN ue.total_tokens ELSE 0 END),0)`
 
-func scanAggregate(row interface{ Scan(...any) error }, tokens *coredb.TokenCounts, cost *sql.NullInt64, events, sessions *int64, q *coredb.QualityCoverage) error {
-	return row.Scan(&tokens.InputUncached, &tokens.CacheRead, &tokens.CacheWrite, &tokens.Output, &tokens.Reasoning, &tokens.Total, cost, events, sessions, &q.Reported, &q.Derived, &q.Estimated, &q.Legacy)
+func scanSummaryAggregate(row interface{ Scan(...any) error }, out *coredb.Summary, cost *sql.NullInt64) error {
+	return row.Scan(&out.Tokens.InputUncached, &out.Tokens.CacheRead, &out.Tokens.CacheWrite, &out.Tokens.Output, &out.Tokens.Reasoning, &out.Tokens.Total, cost, &out.Events, &out.Sessions, &out.Quality.Reported, &out.Quality.Derived, &out.Quality.Estimated, &out.Quality.Legacy, &out.CostCoverage.PricedTokens, &out.CostCoverage.UnpricedTokens, &out.CostCoverage.PricedEvents, &out.CostCoverage.UnpricedEvents)
 }
 
 func (r *Repository) Summary(ctx context.Context, filter coredb.QueryFilter) (coredb.Summary, error) {
@@ -105,7 +121,7 @@ func (r *Repository) Summary(ctx context.Context, filter coredb.QueryFilter) (co
 	out.RangeFrom, out.RangeTo, out.GeneratedAt = f.From, f.To, time.Now().UTC()
 	out.Timezone = f.Timezone.String()
 	var cost sql.NullInt64
-	if err := scanAggregate(r.db.QueryRowContext(ctx, `SELECT `+aggregateColumns+` FROM usage_events ue JOIN sessions s ON s.id=ue.session_id WHERE `+where, args...), &out.Tokens, &cost, &out.Events, &out.Sessions, &out.Quality); err != nil {
+	if err := scanSummaryAggregate(r.db.QueryRowContext(ctx, `SELECT `+summaryAggregateColumns+` FROM usage_events ue JOIN sessions s ON s.id=ue.session_id WHERE `+where, args...), &out, &cost); err != nil {
 		return out, err
 	}
 	sessionTotal, err := sessionCount(ctx, r.db, f)
@@ -189,7 +205,6 @@ func (r *Repository) Series(ctx context.Context, filter coredb.QueryFilter, buck
 	defer func() { _ = rows.Close() }()
 	points := map[int64]*coredb.SeriesPoint{}
 	sessions := map[int64]map[string]struct{}{}
-	unknownCost := map[int64]bool{}
 	for rows.Next() {
 		var p rawPoint
 		if err := rows.Scan(&p.at, &p.session, &p.tokens.InputUncached, &p.tokens.CacheRead, &p.tokens.CacheWrite, &p.tokens.Output, &p.tokens.Reasoning, &p.tokens.Total, &p.cost, &p.quality); err != nil {
@@ -214,8 +229,13 @@ func (r *Repository) Series(ctx context.Context, filter coredb.QueryFilter, buck
 				item.CostMicros = &v
 			}
 			*item.CostMicros += p.cost.Int64
+			item.CostCoverage.PricedTokens += p.tokens.Total
+			if p.tokens.Total > 0 {
+				item.CostCoverage.PricedEvents++
+			}
 		} else if p.tokens.Total > 0 {
-			unknownCost[key] = true
+			item.CostCoverage.UnpricedTokens += p.tokens.Total
+			item.CostCoverage.UnpricedEvents++
 		}
 		sessions[key][p.session] = struct{}{}
 	}
@@ -231,9 +251,6 @@ func (r *Repository) Series(ctx context.Context, filter coredb.QueryFilter, buck
 		_, end, _ := bucketBounds(start, bucket)
 		key := start.UTC().UnixMilli()
 		if p := points[key]; p != nil {
-			if unknownCost[key] {
-				p.CostMicros = nil
-			}
 			p.Sessions = int64(len(sessions[key]))
 			out = append(out, *p)
 		} else {
@@ -419,7 +436,7 @@ func (r *Repository) LastSync(ctx context.Context) (coredb.SyncStatus, error) {
 	var started int64
 	var finished sql.NullInt64
 	var raw string
-	err := r.db.QueryRowContext(ctx, `SELECT id,started_at_ms,finished_at_ms,status,inserted_count,updated_count,skipped_count,error_count,diagnostics_json FROM sync_runs ORDER BY id DESC LIMIT 1`).Scan(&out.ID, &started, &finished, &out.Status, &out.Inserted, &out.Updated, &out.Skipped, &out.Errors, &raw)
+	err := r.db.QueryRowContext(ctx, `SELECT id,started_at_ms,finished_at_ms,status,inserted_count,updated_count,skipped_count,error_count,diagnostics_json FROM sync_runs ORDER BY id DESC LIMIT 1`).Scan(&out.ID, &started, &finished, &out.Status, &out.EventsCommitted, &out.SessionsCommitted, &out.Skipped, &out.Errors, &raw)
 	if errors.Is(err, sql.ErrNoRows) {
 		out.Status = "never"
 		out.Diagnostics = []string{}

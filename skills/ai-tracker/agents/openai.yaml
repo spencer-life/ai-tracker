@@ -1,0 +1,4 @@
+interface:
+  display_name: "AI Tracker"
+  short_description: "Query local AI usage and agent metadata"
+  default_prompt: "Use $ai-tracker to sync and summarize my recent local AI usage with measurement quality."

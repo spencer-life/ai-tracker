@@ -140,6 +140,10 @@ func runReport(ctx context.Context, opts reportFlags, bucket string) error {
 	cost := "unavailable"
 	if summary.CostMicros != nil {
 		cost = fmt.Sprintf("$%.4f", float64(*summary.CostMicros)/1e6)
+		pricedTotal := summary.CostCoverage.PricedTokens + summary.CostCoverage.UnpricedTokens
+		if pricedTotal > 0 && summary.CostCoverage.UnpricedTokens > 0 {
+			cost += fmt.Sprintf(" (%.1f%% priced)", 100*float64(summary.CostCoverage.PricedTokens)/float64(pricedTotal))
+		}
 	}
 	_, _ = fmt.Fprintf(w, "%s to %s\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%s\n", summary.RangeFrom.Format("2006-01-02"), summary.RangeTo.Format("2006-01-02"), summary.Sessions, summary.Tokens.Total, summary.Tokens.InputUncached, summary.Tokens.CacheRead, summary.Tokens.CacheWrite, summary.Tokens.Output, summary.Tokens.Reasoning, cost)
 	if summary.Quality.Estimated > 0 {

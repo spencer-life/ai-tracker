@@ -30,6 +30,13 @@ type QualityCoverage struct {
 	Legacy    int64 `json:"legacy"`
 }
 
+type CostCoverage struct {
+	PricedTokens   int64 `json:"pricedTokens"`
+	UnpricedTokens int64 `json:"unpricedTokens"`
+	PricedEvents   int64 `json:"pricedEvents"`
+	UnpricedEvents int64 `json:"unpricedEvents"`
+}
+
 type QueryFilter struct {
 	From             time.Time
 	To               time.Time
@@ -54,16 +61,18 @@ type Summary struct {
 	Events             int64           `json:"events"`
 	Tokens             TokenCounts     `json:"tokens"`
 	CostMicros         *int64          `json:"costMicros,omitempty"`
+	CostCoverage       CostCoverage    `json:"costCoverage"`
 	Quality            QualityCoverage `json:"quality"`
 }
 
 type SeriesPoint struct {
-	Start      time.Time       `json:"start"`
-	End        time.Time       `json:"end"`
-	Tokens     TokenCounts     `json:"tokens"`
-	CostMicros *int64          `json:"costMicros,omitempty"`
-	Sessions   int64           `json:"sessions"`
-	Quality    QualityCoverage `json:"quality"`
+	Start        time.Time       `json:"start"`
+	End          time.Time       `json:"end"`
+	Tokens       TokenCounts     `json:"tokens"`
+	CostMicros   *int64          `json:"costMicros,omitempty"`
+	CostCoverage CostCoverage    `json:"costCoverage"`
+	Sessions     int64           `json:"sessions"`
+	Quality      QualityCoverage `json:"quality"`
 }
 
 type Session struct {
@@ -100,15 +109,15 @@ type BreakdownItem struct {
 }
 
 type SyncStatus struct {
-	ID          int64      `json:"id"`
-	StartedAt   time.Time  `json:"startedAt"`
-	FinishedAt  *time.Time `json:"finishedAt,omitempty"`
-	Status      string     `json:"status"`
-	Inserted    int64      `json:"inserted"`
-	Updated     int64      `json:"updated"`
-	Skipped     int64      `json:"skipped"`
-	Errors      int64      `json:"errors"`
-	Diagnostics []string   `json:"diagnostics"`
+	ID                int64      `json:"id"`
+	StartedAt         time.Time  `json:"startedAt"`
+	FinishedAt        *time.Time `json:"finishedAt,omitempty"`
+	Status            string     `json:"status"`
+	EventsCommitted   int64      `json:"eventsCommitted"`
+	SessionsCommitted int64      `json:"sessionsCommitted"`
+	Skipped           int64      `json:"skipped"`
+	Errors            int64      `json:"errors"`
+	Diagnostics       []string   `json:"diagnostics"`
 }
 
 type AgentStats struct {

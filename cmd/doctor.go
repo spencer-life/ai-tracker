@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/spencer-life/ai-tracker/ingest"
 	"github.com/spf13/cobra"
@@ -46,7 +47,7 @@ var doctorCmd = &cobra.Command{Use: "doctor", Short: "Diagnose telemetry freshne
 	for _, q := range []struct{ name, sql string }{
 		{"unknown pricing", `SELECT COUNT(*) FROM usage_events WHERE cost_micros IS NULL AND total_tokens > 0`},
 		{"estimated usage", `SELECT COUNT(*) FROM usage_events WHERE measurement='estimated'`},
-		{"source errors", `SELECT COUNT(*) FROM source_checkpoints WHERE last_error <> ''`},
+		{"latest sync errors", `SELECT COALESCE((SELECT error_count FROM sync_runs ORDER BY id DESC LIMIT 1), 0)`},
 	} {
 		var n int64
 		if err := dbConn.QueryRowContext(cmd.Context(), q.sql).Scan(&n); err != nil && !isNoRows(err) {
@@ -57,6 +58,31 @@ var doctorCmd = &cobra.Command{Use: "doctor", Short: "Diagnose telemetry freshne
 			status = "warn"
 		}
 		checks = append(checks, doctorCheck{q.name, status, fmt.Sprintf("%d records", n)})
+	}
+	for index := range checks {
+		if checks[index].Name != "unknown pricing" || checks[index].Status == "ok" {
+			continue
+		}
+		rows, err := dbConn.QueryContext(cmd.Context(), `SELECT CASE WHEN model='' THEN '(unknown model)' ELSE model END,COUNT(*),COALESCE(SUM(total_tokens),0) FROM usage_events WHERE cost_micros IS NULL AND total_tokens>0 GROUP BY model ORDER BY SUM(total_tokens) DESC LIMIT 5`)
+		if err != nil {
+			return err
+		}
+		var models []string
+		for rows.Next() {
+			var model string
+			var events, tokens int64
+			if err := rows.Scan(&model, &events, &tokens); err != nil {
+				_ = rows.Close()
+				return err
+			}
+			models = append(models, fmt.Sprintf("%s (%d events, %d tokens)", model, events, tokens))
+		}
+		if err := rows.Close(); err != nil {
+			return err
+		}
+		if len(models) > 0 {
+			checks[index].Detail += "; top models: " + strings.Join(models, ", ")
+		}
 	}
 	if doctorJSON {
 		return json.NewEncoder(os.Stdout).Encode(checks)

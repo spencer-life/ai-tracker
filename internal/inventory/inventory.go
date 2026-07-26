@@ -45,10 +45,23 @@ type Component struct {
 	Diagnostics  []string  `json:"diagnostics,omitempty"`
 }
 
+// Roots supplies effective provider configuration homes when they differ from
+// the operating-system user home.
+type Roots struct {
+	CodexHome  string
+	ClaudeHome string
+}
+
 // Scan inventories supported global configuration and configuration in the
 // current repository ancestry. Individual malformed or unsafe sources are
 // returned as broken components; error is reserved for invalid scan roots or
 // cancellation.
 func Scan(ctx context.Context, home, cwd string) ([]Component, error) {
-	return scan(ctx, home, cwd)
+	return scan(ctx, home, cwd, Roots{})
+}
+
+// ScanWithRoots inventories effective provider homes plus repository-local
+// configuration. Empty roots use the conventional directories under home.
+func ScanWithRoots(ctx context.Context, home, cwd string, roots Roots) ([]Component, error) {
+	return scan(ctx, home, cwd, roots)
 }

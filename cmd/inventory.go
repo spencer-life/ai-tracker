@@ -21,7 +21,10 @@ var inventoryCmd = &cobra.Command{Use: "inventory", Short: "Inventory privacy-sa
 	if err != nil {
 		return err
 	}
-	items, err := inventory.Scan(cmd.Context(), home, cwd)
+	items, err := inventory.ScanWithRoots(cmd.Context(), home, cwd, inventory.Roots{
+		CodexHome:  os.Getenv("CODEX_HOME"),
+		ClaudeHome: os.Getenv("CLAUDE_CONFIG_DIR"),
+	})
 	if err != nil {
 		return err
 	}

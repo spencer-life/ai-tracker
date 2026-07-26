@@ -160,6 +160,101 @@ func TestIngestCodexDeduplicatesRepeatedCumulativeSnapshots(t *testing.T) {
 	}
 }
 
+func TestIngestCodexSkipsCopiedParentPrefixInSubagentRollout(t *testing.T) {
+	repo := newCodexTestRepository(t)
+	home := t.TempDir()
+	root := filepath.Join(home, ".codex", "sessions", "2026", "07", "01")
+	if err := os.MkdirAll(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	parentMeta := `{"timestamp":"2026-07-01T01:00:00Z","type":"session_meta","payload":{"id":"parent-session","timestamp":"2026-07-01T01:00:00Z","cwd":"/private/project"}}` + "\n"
+	parentTurn := `{"timestamp":"2026-07-01T01:01:00Z","type":"turn_context","payload":{"model":"gpt-parent","turn_id":"parent-turn"}}` + "\n"
+	parentUsage := `{"timestamp":"2026-07-01T01:02:00Z","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":10,"output_tokens":2,"total_tokens":12}}}}` + "\n"
+	writeCodexTestFile(t, filepath.Join(root, "rollout-parent.jsonl"), parentMeta+parentTurn+parentUsage)
+
+	childMeta := `{"timestamp":"2026-07-01T02:00:00Z","type":"session_meta","payload":{"id":"child-session","parent_thread_id":"parent-session","forked_from_id":"parent-session","thread_source":"subagent","timestamp":"2026-07-01T02:00:00Z","cwd":"/private/project"}}` + "\n"
+	childTurn := `{"timestamp":"2026-07-01T02:01:00Z","type":"turn_context","payload":{"model":"gpt-child","turn_id":"child-turn"}}` + "\n"
+	boundary := `{"timestamp":"2026-07-01T02:01:01Z","type":"inter_agent_communication_metadata","payload":{"trigger_turn":true}}` + "\n"
+	childUsage := `{"timestamp":"2026-07-01T02:02:00Z","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":20,"output_tokens":4,"total_tokens":24}}}}` + "\n"
+	writeCodexTestFile(t, filepath.Join(root, "rollout-child.jsonl"), childMeta+parentMeta+parentTurn+parentUsage+childTurn+boundary+childUsage)
+
+	if _, err := ingestCodex(context.Background(), repo, home); err != nil {
+		t.Fatal(err)
+	}
+	var sessions, events int
+	var total int64
+	if err := repo.db.QueryRow(`SELECT COUNT(*) FROM sessions`).Scan(&sessions); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.db.QueryRow(`SELECT COUNT(*),SUM(total_tokens) FROM usage_events`).Scan(&events, &total); err != nil {
+		t.Fatal(err)
+	}
+	if sessions != 2 || events != 2 || total != 36 {
+		t.Fatalf("aggregate sessions=%d events=%d total=%d, want 2/2/36", sessions, events, total)
+	}
+
+	var parentID string
+	var subagent int
+	var model string
+	if err := repo.db.QueryRow(`SELECT parent_session_id,is_subagent,model FROM sessions WHERE source_session_id='child-session'`).Scan(&parentID, &subagent, &model); err != nil {
+		t.Fatal(err)
+	}
+	if parentID != codexSessionID("parent-session") || subagent != 1 || model != "gpt-child" {
+		t.Fatalf("child relationship parent=%q subagent=%d model=%q", parentID, subagent, model)
+	}
+}
+
+func TestIngestCodexCopiedParentPrefixWithoutChildBoundaryHasNoUsage(t *testing.T) {
+	repo := newCodexTestRepository(t)
+	home := t.TempDir()
+	path := codexTestRolloutPath(t, home)
+	parentMeta := `{"timestamp":"2026-07-01T01:00:00Z","type":"session_meta","payload":{"id":"parent-session","timestamp":"2026-07-01T01:00:00Z"}}` + "\n"
+	parentUsage := `{"timestamp":"2026-07-01T01:02:00Z","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":10,"output_tokens":2,"total_tokens":12}}}}` + "\n"
+	writeCodexTestFile(t, path, codexTestMeta+parentMeta+codexTestTurn+parentUsage)
+
+	result, err := ingestCodex(context.Background(), repo, home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.inserted != 0 || result.updated != 1 {
+		t.Fatalf("result=%+v, copied parent usage should not be committed", result)
+	}
+	var events int
+	if err := repo.db.QueryRow(`SELECT COUNT(*) FROM usage_events`).Scan(&events); err != nil {
+		t.Fatal(err)
+	}
+	if events != 0 {
+		t.Fatalf("events=%d, want zero before a child trigger boundary", events)
+	}
+}
+
+func TestIngestCodexContinuesAfterMalformedHistoricalRollout(t *testing.T) {
+	repo := newCodexTestRepository(t)
+	home := t.TempDir()
+	root := filepath.Join(home, ".codex", "sessions", "2026", "07", "01")
+	if err := os.MkdirAll(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	writeCodexTestFile(t, filepath.Join(root, "rollout-000-bad.jsonl"), "{not-json}\n")
+	writeCodexTestFile(t, filepath.Join(root, "rollout-999-good.jsonl"), codexTestMeta+codexTestTurn+codexTestUsage1)
+
+	result, err := ingestCodex(context.Background(), repo, home)
+	if err == nil {
+		t.Fatal("ingestCodex() should report degraded historical input")
+	}
+	if result.inserted != 1 || result.updated != 1 {
+		t.Fatalf("valid newer rollout was not committed: %+v", result)
+	}
+	var events int
+	if err := repo.db.QueryRow(`SELECT COUNT(*) FROM usage_events`).Scan(&events); err != nil {
+		t.Fatal(err)
+	}
+	if events != 1 {
+		t.Fatalf("events=%d, want 1", events)
+	}
+}
+
 func TestIngestCodexSameSizeRewriteReplacesSourceAtomically(t *testing.T) {
 	repo := newCodexTestRepository(t)
 	home := t.TempDir()
@@ -220,6 +315,7 @@ func TestCodexInputPartitionHandlesSchemaVariance(t *testing.T) {
 
 func newCodexTestRepository(t *testing.T) *Repository {
 	t.Helper()
+	t.Setenv("CODEX_HOME", "")
 	db, err := sql.Open("sqlite", fmt.Sprintf("file:codex-%s?mode=memory&cache=shared", codexHash(t.Name())))
 	if err != nil {
 		t.Fatal(err)
@@ -231,6 +327,61 @@ func newCodexTestRepository(t *testing.T) *Repository {
 	}
 	t.Cleanup(func() { _ = db.Close() })
 	return NewRepository(db)
+}
+
+func TestResolveCodexHomeHonorsEnvironment(t *testing.T) {
+	configured := t.TempDir()
+	t.Setenv("CODEX_HOME", configured)
+	if got := resolveCodexHome("/fallback/home"); got != configured {
+		t.Fatalf("resolveCodexHome() = %q, want %q", got, configured)
+	}
+
+	t.Setenv("CODEX_HOME", "")
+	want := filepath.Join("/fallback/home", ".codex")
+	if got := resolveCodexHome("/fallback/home"); got != want {
+		t.Fatalf("resolveCodexHome() fallback = %q, want %q", got, want)
+	}
+}
+
+func TestIngestCodexIncludesConfiguredAndNativeStoresWithoutDuplicates(t *testing.T) {
+	repo := newCodexTestRepository(t)
+	home := t.TempDir()
+	configured := t.TempDir()
+	t.Setenv("CODEX_HOME", configured)
+
+	fallbackPath := codexTestRolloutPath(t, home)
+	configuredPath := filepath.Join(configured, "sessions", "2026", "07", "02", "rollout-configured.jsonl")
+	if err := os.MkdirAll(filepath.Dir(configuredPath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	fallbackMeta := strings.ReplaceAll(codexTestMeta, "child-session", "fallback-session")
+	configuredMeta := strings.ReplaceAll(codexTestMeta, "child-session", "configured-session")
+	writeCodexTestFile(t, fallbackPath, fallbackMeta+codexTestTurn+codexTestUsage1)
+	writeCodexTestFile(t, configuredPath, configuredMeta+codexTestTurn+codexTestUsage1)
+
+	result, err := ingestCodex(context.Background(), repo, home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.inserted != 2 || result.updated != 2 {
+		t.Fatalf("combined result = %+v, want two events and sessions", result)
+	}
+
+	duplicate := filepath.Join(home, ".codex", "sessions", "2026", "07", "03", "rollout-configured.jsonl")
+	if err := os.MkdirAll(filepath.Dir(duplicate), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	writeCodexTestFile(t, duplicate, fallbackMeta+codexTestTurn+codexTestUsage2)
+	if _, err := ingestCodex(context.Background(), repo, home); err != nil {
+		t.Fatal(err)
+	}
+	var sessions int
+	if err := repo.db.QueryRow(`SELECT COUNT(*) FROM sessions`).Scan(&sessions); err != nil {
+		t.Fatal(err)
+	}
+	if sessions != 2 {
+		t.Fatalf("sessions=%d, duplicate secondary rollout should be ignored", sessions)
+	}
 }
 
 func codexTestRolloutPath(t *testing.T, home string) string {

@@ -1,12 +1,25 @@
 version: 2
 project_name: ai-tracker
 builds:
-  - env:
+  - id: ai-tracker
+    main: .
+    binary: ai-tracker
+    env:
       - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - >-
+        -s -w
+        -X github.com/spencer-life/ai-tracker/cmd.Version={{ .Version }}
+        -X github.com/spencer-life/ai-tracker/cmd.Commit={{ .Commit }}
+        -X github.com/spencer-life/ai-tracker/cmd.Date={{ .Date }}
     goos:
       - linux
-      - windows
       - darwin
+    goarch:
+      - amd64
+      - arm64
 archives:
   - formats:
       - tar.gz
@@ -16,7 +29,13 @@ archives:
       {{- if eq .Arch "386" }}i386
       {{- else if eq .Arch "amd64" }}x86_64
       {{- else }}{{ .Arch }}{{ end }}
-    format_overrides:
-      - goos: windows
-        formats:
-          - zip
+    files:
+      - LICENSE
+      - README.md
+      - ai-tracker-guide.html
+      - skills/ai-tracker/SKILL.md
+      - skills/ai-tracker/agents/openai.yaml
+checksum:
+  name_template: checksums.txt
+changelog:
+  use: git

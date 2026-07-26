@@ -25,9 +25,14 @@ const (
 var tabNames = []string{"Overview", "Trends", "Sessions", "Agents/Models", "Inventory", "Data Health"}
 
 var (
-	scanInventory = inventory.Scan
-	userHomeDir   = os.UserHomeDir
-	workingDir    = os.Getwd
+	scanInventory = func(ctx context.Context, home, cwd string) ([]inventory.Component, error) {
+		return inventory.ScanWithRoots(ctx, home, cwd, inventory.Roots{
+			CodexHome:  os.Getenv("CODEX_HOME"),
+			ClaudeHome: os.Getenv("CLAUDE_CONFIG_DIR"),
+		})
+	}
+	userHomeDir = os.UserHomeDir
+	workingDir  = os.Getwd
 )
 
 type TickMsg time.Time
@@ -236,12 +241,16 @@ func (m Model) renderOverview() string {
 	s := m.data.summary
 	cost := "unavailable"
 	if s.CostMicros != nil {
-		cost = fmt.Sprintf("$%.4f known", float64(*s.CostMicros)/1e6)
+		cost = fmt.Sprintf("$%.4f", float64(*s.CostMicros)/1e6)
+		pricedTotal := s.CostCoverage.PricedTokens + s.CostCoverage.UnpricedTokens
+		if pricedTotal > 0 {
+			cost += fmt.Sprintf(" (%.0f%% priced)", 100*float64(s.CostCoverage.PricedTokens)/float64(pricedTotal))
+		}
 	}
 	lines := []string{
 		HeaderStyle.Render("Overview · measured usage (estimates excluded)"),
 		fmt.Sprintf("Sessions  %s    Events  %s", number(s.Sessions), number(s.Events)),
-		fmt.Sprintf("Tokens    %s    API-equiv cost  %s", number(s.Tokens.Total), cost),
+		fmt.Sprintf("Tokens    %s    Standard API-equiv cost  %s", number(s.Tokens.Total), cost),
 		fmt.Sprintf("Input     %s    Output          %s", number(s.Tokens.InputUncached), number(s.Tokens.Output)),
 		fmt.Sprintf("Cache read %s   Cache write     %s", number(s.Tokens.CacheRead), number(s.Tokens.CacheWrite)),
 		fmt.Sprintf("Reasoning %s", number(s.Tokens.Reasoning)),
@@ -294,7 +303,7 @@ func (m Model) renderSessions() string {
 		if model == "" {
 			model = "unknown model"
 		}
-		lines = append(lines, fmt.Sprintf("%s  %-15s %-20s %10s  %s", session.UpdatedAt.In(m.location).Format("Jul 23 15:04"), kind, model, number(session.Tokens.Total), measurement(session.Measurement)))
+		lines = append(lines, fmt.Sprintf("%s  %-15s %-20s %10s  %s", session.UpdatedAt.In(m.location).Format("Jan 02 15:04"), kind, model, number(session.Tokens.Total), measurement(session.Measurement)))
 	}
 	if m.data.sessions.NextCursor != "" {
 		lines = append(lines, HelpStyle.Render("More sessions available; use CLI/API for pagination."))
@@ -329,7 +338,7 @@ func (m Model) renderInventory() string {
 		lines = append(lines, fmt.Sprintf("%-7s %-13s %-22s %-10s %s", item.Provider, item.Kind, item.DisplayName, item.Scope, item.State))
 	}
 	if len(m.data.inventory) > limit {
-		lines = append(lines, HelpStyle.Render(fmt.Sprintf("%d more items; use `ait inventory` for the complete list.", len(m.data.inventory)-limit)))
+		lines = append(lines, HelpStyle.Render(fmt.Sprintf("%d more items; use `ai-tracker inventory` for the complete list.", len(m.data.inventory)-limit)))
 	}
 	return fitLines(lines, m.width)
 }
@@ -366,7 +375,7 @@ func (m Model) renderHealth() string {
 		if s.Status == "success" && s.FinishedAt != nil && m.now().Sub(*s.FinishedAt) > 24*time.Hour {
 			status += " · stale (>24h)"
 		}
-		lines = append(lines, status, fmt.Sprintf("Inserted %d  Updated %d  Skipped %d  Errors %d", s.Inserted, s.Updated, s.Skipped, s.Errors))
+		lines = append(lines, status, fmt.Sprintf("Events %d  Sessions %d  Skipped %d  Errors %d", s.EventsCommitted, s.SessionsCommitted, s.Skipped, s.Errors))
 		for _, diagnostic := range s.Diagnostics[:min(len(s.Diagnostics), max(0, m.height-11))] {
 			lines = append(lines, "- "+diagnostic)
 		}

@@ -158,7 +158,7 @@ func TestViewsAreTruthfulAndFitSmallTerminal(t *testing.T) {
 		}
 	}
 	text := combined.String()
-	for _, want := range []string{"measured usage", "Daily token usage", "Recent sessions", "Agents", "Customization inventory", "stale (>24h)", "estimated 200 (excluded)"} {
+	for _, want := range []string{"measured usage", "Daily token usage", "Recent sessions", "Jul 23 12:00", "Agents", "Customization inventory", "stale (>24h)", "estimated 200 (excluded)"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("missing truthful view text %q", want)
 		}
@@ -167,6 +167,18 @@ func TestViewsAreTruthfulAndFitSmallTerminal(t *testing.T) {
 		if strings.Contains(text, forbidden) {
 			t.Errorf("found fabricated telemetry label %q", forbidden)
 		}
+	}
+}
+
+func TestInventoryOverflowNamesExecutable(t *testing.T) {
+	m := NewModel(&fakeRepository{})
+	m.width, m.height, m.loading, m.activeTab = 100, 12, false, 4
+	for i := 0; i < 20; i++ {
+		m.data.inventory = append(m.data.inventory, inventory.Component{Provider: "codex", Kind: "skill", DisplayName: "item", Scope: "global", State: inventory.StateConfiguredEnabled})
+	}
+	view := m.View()
+	if !strings.Contains(view, "ai-tracker inventory") || strings.Contains(view, "`ait inventory`") {
+		t.Fatalf("inventory overflow help names wrong executable: %s", view)
 	}
 }
 

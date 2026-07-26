@@ -194,7 +194,10 @@ func (p *jsonMetaParser) string(retain bool) (string, error) {
 }
 
 func recognizedContainer(path []string) (string, bool) {
-	if len(path) == 0 {
+	// Supported declarations are top-level configuration containers. Nested
+	// objects inside one declaration often contain keys such as "hooks" or
+	// "command" that are fields, not additional components.
+	if len(path) != 1 {
 		return "", false
 	}
 	switch strings.ToLower(path[len(path)-1]) {

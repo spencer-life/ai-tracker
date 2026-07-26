@@ -14,13 +14,12 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"syscall"
 	"time"
 
 	coredb "github.com/spencer-life/ai-tracker/internal/db"
 )
 
-const claudeParserVersion = "claude-v2.1"
+const claudeParserVersion = "claude-v2.2"
 
 // claudeLogRow deliberately models only metadata and accounting fields. Prompt
 // content and titles are never decoded, retained, or written to the database.
@@ -48,6 +47,10 @@ type claudeUsage struct {
 	CacheReadInputTokens     int64 `json:"cache_read_input_tokens"`
 	CacheCreationInputTokens int64 `json:"cache_creation_input_tokens"`
 	OutputTokens             int64 `json:"output_tokens"`
+	CacheCreation            struct {
+		Ephemeral5mInputTokens int64 `json:"ephemeral_5m_input_tokens"`
+		Ephemeral1hInputTokens int64 `json:"ephemeral_1h_input_tokens"`
+	} `json:"cache_creation"`
 }
 
 type claudeSessionBatch struct {
@@ -64,7 +67,7 @@ type claudeSessionBatch struct {
 
 func ingestClaude(ctx context.Context, repo *Repository, home string) (sourceResult, error) {
 	var result sourceResult
-	root := filepath.Join(home, ".claude", "projects")
+	root := filepath.Join(resolveClaudeHome(home), "projects")
 	var paths []string
 	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
@@ -272,6 +275,11 @@ func claudeAccumulateRow(result *sourceResult, batches map[string]*claudeSession
 		Output:        usage.OutputTokens,
 	}
 	tokens.Total = tokens.InputUncached + tokens.CacheRead + tokens.CacheWrite + tokens.Output
+	cacheWrite1h := int64(0)
+	cacheBreakdown := usage.CacheCreation.Ephemeral5mInputTokens + usage.CacheCreation.Ephemeral1hInputTokens
+	if usage.CacheCreation.Ephemeral5mInputTokens >= 0 && usage.CacheCreation.Ephemeral1hInputTokens >= 0 && cacheBreakdown == usage.CacheCreationInputTokens {
+		cacheWrite1h = usage.CacheCreation.Ephemeral1hInputTokens
+	}
 	turnID := row.Message.ID
 	if turnID == "" {
 		turnID = row.RequestID
@@ -280,7 +288,8 @@ func claudeAccumulateRow(result *sourceResult, batches map[string]*claudeSession
 		ID:        claudeHash("event", pathHash, sourceID, eventIdentity),
 		SessionID: claudeSessionID(sourceID), TurnID: turnID, Model: row.Message.Model,
 		Provider: "anthropic", OccurredAtMS: occurredAtMS, Tokens: tokens,
-		Measurement: coredb.MeasurementReported, SourcePathHash: pathHash,
+		CacheWrite1h: cacheWrite1h,
+		Measurement:  coredb.MeasurementReported, SourcePathHash: pathHash,
 		SourceOffset: sourceOffset, ParserVersion: claudeParserVersion,
 	})
 }
@@ -308,9 +317,5 @@ func claudeHash(parts ...string) string {
 }
 
 func claudeFileIdentity(info os.FileInfo) (uint64, uint64) {
-	stat, ok := info.Sys().(*syscall.Stat_t)
-	if !ok {
-		return 0, 0
-	}
-	return uint64(stat.Dev), uint64(stat.Ino)
+	return fileIdentity(info)
 }

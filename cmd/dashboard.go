@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"runtime"
 	"time"
 
 	"github.com/spencer-life/ai-tracker/ingest"
@@ -44,7 +45,10 @@ var dashboardCmd = &cobra.Command{
 		if dashboardOpen {
 			go func() {
 				time.Sleep(100 * time.Millisecond)
-				_ = exec.Command("xdg-open", url).Start()
+				name, args, ok := browserOpenCommand(runtime.GOOS, url)
+				if ok {
+					_ = exec.Command(name, args...).Start()
+				}
 			}()
 		}
 
@@ -57,6 +61,19 @@ var dashboardCmd = &cobra.Command{
 			os.Exit(1)
 		}
 	},
+}
+
+func browserOpenCommand(goos, target string) (string, []string, bool) {
+	switch goos {
+	case "darwin":
+		return "open", []string{target}, true
+	case "linux":
+		return "xdg-open", []string{target}, true
+	case "windows":
+		return "rundll32", []string{"url.dll,FileProtocolHandler", target}, true
+	default:
+		return "", nil, false
+	}
 }
 
 func init() {

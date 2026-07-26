@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark light">
-  <title>AI Tracker v2 Guide</title>
+  <title>AI Tracker Guide</title>
   <style>
     :root { color-scheme: dark; --base:#303446; --mantle:#292c3c; --text:#c6d0f5; --muted:#a5adce; --blue:#8caaee; --border:#51576d; }
     * { box-sizing: border-box; }
@@ -23,28 +23,39 @@
 <main>
   <header>
     <p>Local, source-backed usage analytics</p>
-    <h1>AI Tracker v2</h1>
+    <h1>AI Tracker</h1>
     <p><code>ai-tracker</code> combines a Go CLI, terminal UI, and loopback-only browser dashboard for Codex, Claude Code, and agy sessions.</p>
-    <nav aria-label="Guide"><a href="#sources">Sources</a><a href="#commands">Commands</a><a href="#interfaces">Interfaces</a><a href="#privacy">Privacy</a></nav>
+    <nav aria-label="Guide"><a href="#install">Install</a><a href="#sources">Sources</a><a href="#commands">Commands</a><a href="#interfaces">Interfaces</a><a href="#privacy">Privacy</a></nav>
   </header>
+
+  <section id="install">
+    <h2>Install a release binary</h2>
+<pre><code>mise use -g github:spencer-life/ai-tracker@v1.1.0
+ai-tracker version
+ai-tracker sync --rebuild</code></pre>
+    <p>Release archives support Linux/WSL and macOS on x86-64 and ARM64. Windows users run the Linux release inside WSL. The one-time rebuild is required when upgrading from v1.0.0 and creates a timestamped database backup first.</p>
+    <p>To follow and install the newest stable release, run <code>mise use -g github:spencer-life/ai-tracker@latest</code>, then use <code>mise upgrade github:spencer-life/ai-tracker</code> for later updates. To remove it, run <code>mise use -g --remove github:spencer-life/ai-tracker</code> followed by <code>mise uninstall github:spencer-life/ai-tracker</code>. Manual downloads and <code>checksums.txt</code> are available from GitHub Releases; verify before extraction with <code>sha256sum -c checksums.txt --ignore-missing</code> on Linux or <code>shasum -a 256 &lt;archive&gt;</code> on macOS.</p>
+    <p>The archive also bundles the Codex skill under <code>skills/ai-tracker</code>. Copy that directory to <code>$CODEX_HOME/skills/ai-tracker</code> and restart Codex for a manual skill install.</p>
+  </section>
 
   <section id="sources">
     <h2>What is measured</h2>
     <table>
       <thead><tr><th>Agent</th><th>Canonical local source</th><th>Semantics</th></tr></thead>
       <tbody>
-        <tr><td>Codex</td><td><code>~/.codex/sessions/**/rollout-*.jsonl</code></td><td>Reported token categories, model, session, and parent-thread metadata from rollout events.</td></tr>
-        <tr><td>Claude Code</td><td><code>~/.claude/projects/**/*.jsonl</code></td><td>Assistant <code>message.usage</code> records, including cache fields, plus session/project/sidechain metadata.</td></tr>
+        <tr><td>Codex</td><td><code>$CODEX_HOME/sessions</code> plus a distinct <code>~/.codex/sessions</code> archive</td><td>Reported token categories, model, session, and parent-thread metadata from rollout events. Duplicate rollout filenames prefer the active configured store.</td></tr>
+        <tr><td>Claude Code</td><td><code>$CLAUDE_CONFIG_DIR/projects</code>, falling back to <code>~/.claude/projects</code></td><td>Assistant <code>message.usage</code> records, including cache fields, plus session/project/sidechain metadata.</td></tr>
         <tr><td>agy</td><td><code>~/.gemini/antigravity-cli/</code> summary and conversation databases</td><td>Source-backed session/subtrajectory metadata. Authoritative token totals are not locally available.</td></tr>
       </tbody>
     </table>
     <p class="callout">Agy transcript estimates are opt-in. Run <code>ai-tracker sync --include-estimates</code> to import them and add <code>--include-estimates</code> to a report to display them. They remain labelled <code>estimated</code>.</p>
-    <p>Usage carries a <code>reported</code>, <code>derived</code>, <code>estimated</code>, or <code>legacy</code> quality label. Normal totals exclude estimates. Costs use an embedded, versioned model-price snapshot and are API-equivalent estimates, not billing records. Unknown model prices remain null.</p>
+    <p>Usage carries a <code>reported</code>, <code>derived</code>, <code>estimated</code>, or <code>legacy</code> quality label. Normal totals exclude estimates. Costs separately price uncached input, cache reads, cache writes, and output from an embedded vendor/ccusage-derived snapshot. Current Codex/OpenAI, Claude Opus 5, Fable 5, Sonnet 5, Gemini 3.6 Flash, and Gemini 3.1 Pro models are covered, including verified long-context tiers. Claude 5-minute and 1-hour cache writes are distinct when the source reports the breakdown; aggregate-only older rows use the 5-minute rate. Aggregate views exclude unknown-price events and show pricing coverage. These are standard API-equivalent estimates, not subscription, priority/fast-tier, storage, or tool billing. Rebuild after pricing/parser updates to reprice historical events.</p>
   </section>
 
   <section id="commands">
     <h2>Command reference</h2>
 <pre><code># Import or rebuild
+ai-tracker version
 ai-tracker sync
 ai-tracker sync --watch
 ai-tracker sync --rebuild
@@ -59,6 +70,7 @@ ai-tracker sessions --range 30d --agent codex
 # Diagnostics and customization metadata
 ai-tracker doctor
 ai-tracker inventory
+ai-tracker completion zsh
 
 # Machine-readable output and exports
 ai-tracker usage --range 30d --json
@@ -68,7 +80,7 @@ ai-tracker export --range 7d --csv --out usage.zip
 ai-tracker tui
 ai-tracker dashboard --open</code></pre>
     <p>Report and export filters include <code>--range today|7d|30d|mtd|custom</code>, <code>--from</code>, <code>--to</code>, <code>--tz</code>, <code>--agent</code>, <code>--provider</code>, <code>--model</code>, <code>--quality</code>, <code>--include-estimates</code>, and <code>--limit</code>. Date ranges are half-open: the start is included and the end is excluded. Weekly buckets begin Monday. Human-readable report output is a range summary; the JSON form of <code>daily</code>, <code>weekly</code>, and <code>monthly</code> includes the selected bucketed series.</p>
-    <p><code>ai-tracker sync --rebuild</code> creates a timestamped backup, clears v2 facts and checkpoints, and reimports canonical sources. <code>ai-tracker clean --yes</code> also backs up before clearing, but does not reimport.</p>
+    <p><code>ai-tracker sync --rebuild</code> creates a timestamped backup, clears all telemetry and checkpoints, and reimports canonical sources. Legacy rows survive in the backup rather than the rebuilt database. <code>ai-tracker clean --yes</code> also backs up before clearing, but does not reimport. Sync health reports usage events committed, session records committed, sources skipped, and actual source errors separately from informational diagnostics.</p>
   </section>
 
   <section id="interfaces">
@@ -80,7 +92,7 @@ ai-tracker dashboard --open</code></pre>
 
   <section id="privacy">
     <h2>Storage and privacy</h2>
-    <p>By default, data is stored in <code>~/.config/ai-tracker/data.db</code>. Directories use mode <code>0700</code>; databases, backups, and exported files use <code>0600</code>. Set <code>AIT_DATA_DIR</code> to move the data directory.</p>
+    <p>By default, data is stored in <code>~/.config/ai-tracker/data.db</code>. On Linux/WSL and macOS, directories use mode <code>0700</code>; databases, backups, and exported files use <code>0600</code>. Set <code>AIT_DATA_DIR</code> to move the data directory.</p>
     <p>On first opening a v1 database, AI Tracker creates a backup under <code>backups/</code> before adding the v2 schema. V2 reports query only the new source-backed tables.</p>
     <p>The database stores accounting and session metadata, not prompt bodies, transcript text, hook commands, environment values, or full source paths. Source and project identifiers are hashed where appropriate. Inventory scans supported global configuration plus the current repository ancestry, returns basenames and stable hashes, and never executes discovered skills, hooks, agents, or plugins.</p>
   </section>

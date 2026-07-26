@@ -32,9 +32,14 @@ const (
 )
 
 var (
-	scanInventory = inventory.Scan
-	userHomeDir   = os.UserHomeDir
-	workingDir    = os.Getwd
+	scanInventory = func(ctx context.Context, home, cwd string) ([]inventory.Component, error) {
+		return inventory.ScanWithRoots(ctx, home, cwd, inventory.Roots{
+			CodexHome:  os.Getenv("CODEX_HOME"),
+			ClaudeHome: os.Getenv("CLAUDE_CONFIG_DIR"),
+		})
+	}
+	userHomeDir = os.UserHomeDir
+	workingDir  = os.Getwd
 )
 
 type apiServer struct {

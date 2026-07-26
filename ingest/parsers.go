@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -31,12 +32,13 @@ type SyncOptions struct {
 }
 
 type SyncReport struct {
-	RunID       int64    `json:"runId"`
-	Status      string   `json:"status"`
-	Inserted    int64    `json:"inserted"`
-	Updated     int64    `json:"updated"`
-	Skipped     int64    `json:"skipped"`
-	Diagnostics []string `json:"diagnostics"`
+	RunID             int64    `json:"runId"`
+	Status            string   `json:"status"`
+	EventsCommitted   int64    `json:"eventsCommitted"`
+	SessionsCommitted int64    `json:"sessionsCommitted"`
+	Skipped           int64    `json:"skipped"`
+	Errors            int64    `json:"errors"`
+	Diagnostics       []string `json:"diagnostics"`
 }
 
 func IngestLogs(dbConn *sql.DB) error {
@@ -80,14 +82,61 @@ func Sync(ctx context.Context, dbConn *sql.DB, opts SyncOptions) (SyncReport, er
 	if len(sourceErrors) > 0 {
 		report.Status = "degraded"
 	}
-	report.Inserted, report.Updated, report.Skipped, report.Diagnostics = combined.inserted, combined.updated, combined.skipped, combined.diagnostics
-	if err := repo.FinishSync(ctx, runID, report.Status, report.Inserted, report.Updated, report.Skipped, int64(len(sourceErrors)), report.Diagnostics); err != nil {
+	report.EventsCommitted, report.SessionsCommitted, report.Skipped, report.Diagnostics = combined.inserted, combined.updated, combined.skipped, combined.diagnostics
+	report.Errors = int64(len(sourceErrors))
+	if err := repo.FinishSync(ctx, runID, report.Status, report.EventsCommitted, report.SessionsCommitted, report.Skipped, report.Errors, report.Diagnostics); err != nil {
 		return report, fmt.Errorf("finish sync: %w", err)
 	}
 	if len(sourceErrors) > 0 {
 		return report, errors.Join(sourceErrors...)
 	}
 	return report, nil
+}
+
+func resolveCodexHome(home string) string {
+	return resolveConfiguredHome("CODEX_HOME", filepath.Join(home, ".codex"))
+}
+
+// resolveCodexHomes returns the active configured store first and the
+// conventional per-user store second when they are distinct. Codex Desktop can
+// point WSL processes at a Windows-backed CODEX_HOME while native WSL CLI runs
+// retain history under ~/.codex; usage reporting should include both archives.
+func resolveCodexHomes(home string) []string {
+	configured := resolveCodexHome(home)
+	fallback := filepath.Clean(filepath.Join(home, ".codex"))
+	homes := []string{configured}
+	if !sameCleanPath(configured, fallback) {
+		homes = append(homes, fallback)
+	}
+	return homes
+}
+
+func sameCleanPath(left, right string) bool {
+	leftAbs, leftErr := filepath.Abs(left)
+	rightAbs, rightErr := filepath.Abs(right)
+	if leftErr == nil && rightErr == nil {
+		return filepath.Clean(leftAbs) == filepath.Clean(rightAbs)
+	}
+	return filepath.Clean(left) == filepath.Clean(right)
+}
+
+func resolveClaudeHome(home string) string {
+	return resolveConfiguredHome("CLAUDE_CONFIG_DIR", filepath.Join(home, ".claude"))
+}
+
+func resolveConfiguredHome(envName, fallback string) string {
+	configured := strings.TrimSpace(os.Getenv(envName))
+	if configured == "" {
+		return fallback
+	}
+	if filepath.IsAbs(configured) {
+		return filepath.Clean(configured)
+	}
+	absolute, err := filepath.Abs(configured)
+	if err != nil {
+		return filepath.Clean(configured)
+	}
+	return absolute
 }
 
 func hashString(value string) string {

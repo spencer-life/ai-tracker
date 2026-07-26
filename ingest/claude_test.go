@@ -19,7 +19,7 @@ func TestIngestClaudeCanonicalUsageAndSubagent(t *testing.T) {
 	mainPath := filepath.Join(projectDir, "session-main.jsonl")
 	mainFixture := strings.Join([]string{
 		`{"type":"user","sessionId":"session-main","uuid":"user-1","timestamp":"2026-07-01T09:59:00-07:00","message":{"content":"PRIVATE PROMPT MUST NOT PERSIST"}}`,
-		`{"type":"assistant","sessionId":"session-main","uuid":"turn-1","requestId":"request-1","parentUuid":"user-1","timestamp":"2026-07-01T10:00:00-07:00","message":{"id":"message-1","role":"assistant","model":"claude-sonnet-test","usage":{"input_tokens":11,"cache_read_input_tokens":22,"cache_creation_input_tokens":33,"output_tokens":44,"cache_creation":{"ephemeral_5m_input_tokens":9999}},"content":[{"type":"text","text":"PRIVATE RESPONSE MUST NOT PERSIST"}]}}`,
+		`{"type":"assistant","sessionId":"session-main","uuid":"turn-1","requestId":"request-1","parentUuid":"user-1","timestamp":"2026-07-01T10:00:00-07:00","message":{"id":"message-1","role":"assistant","model":"claude-opus-5","usage":{"input_tokens":11,"cache_read_input_tokens":22,"cache_creation_input_tokens":33,"output_tokens":44,"cache_creation":{"ephemeral_5m_input_tokens":20,"ephemeral_1h_input_tokens":13}},"content":[{"type":"text","text":"PRIVATE RESPONSE MUST NOT PERSIST"}]}}`,
 		`{"type":"assistant","sessionId":"session-main","uuid":"turn-2","timestamp":"2026-07-01T10:01:00-07:00","message":{"role":"assistant","model":"claude-opus-test","usage":{"input_tokens":5,"cache_read_input_tokens":7,"cache_creation_input_tokens":9,"output_tokens":13}}}`,
 	}, "\n") + "\n"
 	if err := os.WriteFile(mainPath, []byte(mainFixture), 0o600); err != nil {
@@ -46,6 +46,13 @@ func TestIngestClaudeCanonicalUsageAndSubagent(t *testing.T) {
 	}
 	if input != 18 || cacheRead != 32 || cacheWrite != 46 || output != 62 || total != 158 {
 		t.Fatalf("token categories = (%d,%d,%d,%d,%d), want (18,32,46,62,158)", input, cacheRead, cacheWrite, output, total)
+	}
+	var durationAwareCost int64
+	if err := repo.db.QueryRow(`SELECT cost_micros FROM usage_events WHERE turn_id='message-1'`).Scan(&durationAwareCost); err != nil {
+		t.Fatal(err)
+	}
+	if durationAwareCost != 1421 {
+		t.Fatalf("duration-aware cache cost=%d, want 1421 microdollars", durationAwareCost)
 	}
 
 	var childID, parentID, sourceID, project, sourcePathHash string
@@ -246,6 +253,7 @@ func TestIngestClaudeMultiSessionRewriteReplacesAllEventsAtomically(t *testing.T
 
 func newClaudeTestRepository(t *testing.T) *Repository {
 	t.Helper()
+	t.Setenv("CLAUDE_CONFIG_DIR", "")
 	dbConn, err := sql.Open("sqlite", ":memory:")
 	if err != nil {
 		t.Fatal(err)
@@ -257,6 +265,20 @@ func newClaudeTestRepository(t *testing.T) *Repository {
 	}
 	t.Cleanup(func() { _ = dbConn.Close() })
 	return NewRepository(dbConn)
+}
+
+func TestResolveClaudeHomeHonorsEnvironment(t *testing.T) {
+	configured := t.TempDir()
+	t.Setenv("CLAUDE_CONFIG_DIR", configured)
+	if got := resolveClaudeHome("/fallback/home"); got != configured {
+		t.Fatalf("resolveClaudeHome() = %q, want %q", got, configured)
+	}
+
+	t.Setenv("CLAUDE_CONFIG_DIR", "")
+	want := filepath.Join("/fallback/home", ".claude")
+	if got := resolveClaudeHome("/fallback/home"); got != want {
+		t.Fatalf("resolveClaudeHome() fallback = %q, want %q", got, want)
+	}
 }
 
 func appendClaudeTestFile(path, value string) error {

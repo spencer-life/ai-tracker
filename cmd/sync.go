@@ -38,7 +38,7 @@ var syncCmd = &cobra.Command{Use: "sync", Short: "Synchronize canonical local ag
 		if syncJSON {
 			_ = json.NewEncoder(os.Stdout).Encode(report)
 		} else {
-			fmt.Printf("sync %s: inserted=%d updated=%d skipped=%d errors=%d\n", report.Status, report.Inserted, report.Updated, report.Skipped, len(report.Diagnostics))
+			fmt.Printf("sync %s: events=%d sessions=%d skipped=%d errors=%d diagnostics=%d\n", report.Status, report.EventsCommitted, report.SessionsCommitted, report.Skipped, report.Errors, len(report.Diagnostics))
 			for _, d := range report.Diagnostics {
 				fmt.Printf("  - %s\n", d)
 			}

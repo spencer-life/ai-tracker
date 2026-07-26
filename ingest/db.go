@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -32,6 +33,7 @@ type UsageEvent struct {
 	ID, SessionID, TurnID, Model, Provider        string
 	OccurredAtMS                                  int64
 	Tokens                                        coredb.TokenCounts
+	CacheWrite1h                                  int64
 	Measurement                                   coredb.Measurement
 	CostMicros                                    *int64
 	PricingVersion, SourcePathHash, ParserVersion string
@@ -77,11 +79,11 @@ func InitDB() (*sql.DB, error) {
 		return nil, err
 	}
 	dbPath := filepath.Join(dir, "data.db")
-	dbConn, err := sql.Open("sqlite", dbPath)
+	dbConn, err := sql.Open("sqlite", sqliteDSN(dbPath))
 	if err != nil {
 		return nil, err
 	}
-	if _, err = dbConn.Exec(`PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000; PRAGMA synchronous=NORMAL; PRAGMA foreign_keys=ON;`); err != nil {
+	if err = dbConn.Ping(); err != nil {
 		_ = dbConn.Close()
 		return nil, fmt.Errorf("configure database: %w", err)
 	}
@@ -112,6 +114,25 @@ func InitDB() (*sql.DB, error) {
 		}
 	}
 	return dbConn, nil
+}
+
+func sqliteDSN(path string) string {
+	normalized := filepath.ToSlash(path)
+	if filepath.VolumeName(path) != "" && !strings.HasPrefix(normalized, "/") {
+		normalized = "/" + normalized
+	}
+	u := &url.URL{Scheme: "file", Path: normalized}
+	query := u.Query()
+	for _, pragma := range []string{
+		"busy_timeout(5000)",
+		"foreign_keys(1)",
+		"journal_mode(WAL)",
+		"synchronous(NORMAL)",
+	} {
+		query.Add("_pragma", pragma)
+	}
+	u.RawQuery = query.Encode()
+	return u.String()
 }
 
 func tableExists(dbConn *sql.DB, name string) (bool, error) {
@@ -329,7 +350,7 @@ func applyBatchTx(ctx context.Context, tx *sql.Tx, batch Batch) (inserted, updat
 	}
 	for _, event := range batch.Events {
 		if event.CostMicros == nil && event.Measurement != coredb.MeasurementEstimated {
-			event.CostMicros, event.PricingVersion = CostFor(event.Model, event.Tokens)
+			event.CostMicros, event.PricingVersion = CostForAtWithCacheDuration(event.Model, event.Tokens, event.CacheWrite1h, time.UnixMilli(event.OccurredAtMS))
 		}
 		res, err = tx.ExecContext(ctx, `INSERT INTO usage_events(id,session_id,occurred_at_ms,turn_id,model,provider,input_uncached,cache_read,cache_write,output_tokens,reasoning_output,total_tokens,measurement,cost_micros,pricing_version,source_path_hash,source_offset,parser_version)
 		VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET session_id=excluded.session_id,occurred_at_ms=excluded.occurred_at_ms,turn_id=excluded.turn_id,model=excluded.model,provider=excluded.provider,input_uncached=excluded.input_uncached,cache_read=excluded.cache_read,cache_write=excluded.cache_write,output_tokens=excluded.output_tokens,reasoning_output=excluded.reasoning_output,total_tokens=excluded.total_tokens,measurement=excluded.measurement,cost_micros=excluded.cost_micros,pricing_version=excluded.pricing_version,source_path_hash=excluded.source_path_hash,source_offset=excluded.source_offset,parser_version=excluded.parser_version`,

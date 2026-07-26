@@ -48,6 +48,41 @@ func TestInitDBBacksUpLegacyAndSecuresFiles(t *testing.T) {
 	}
 }
 
+func TestInitDBAppliesPragmasToEveryConnection(t *testing.T) {
+	t.Setenv("AIT_DATA_DIR", t.TempDir())
+	dbConn, err := InitDB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = dbConn.Close() }()
+	dbConn.SetMaxOpenConns(2)
+
+	ctx := context.Background()
+	first, err := dbConn.Conn(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = first.Close() }()
+	second, err := dbConn.Conn(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = second.Close() }()
+
+	for index, conn := range []*sql.Conn{first, second} {
+		var foreignKeys, busyTimeout int
+		if err := conn.QueryRowContext(ctx, `PRAGMA foreign_keys`).Scan(&foreignKeys); err != nil {
+			t.Fatalf("connection %d foreign_keys: %v", index, err)
+		}
+		if err := conn.QueryRowContext(ctx, `PRAGMA busy_timeout`).Scan(&busyTimeout); err != nil {
+			t.Fatalf("connection %d busy_timeout: %v", index, err)
+		}
+		if foreignKeys != 1 || busyTimeout != 5000 {
+			t.Fatalf("connection %d pragmas foreign_keys=%d busy_timeout=%d", index, foreignKeys, busyTimeout)
+		}
+	}
+}
+
 func TestV2QueriesExcludeEstimatesAndZeroFill(t *testing.T) {
 	t.Setenv("AIT_DATA_DIR", t.TempDir())
 	dbConn, err := InitDB()
@@ -149,7 +184,7 @@ func TestSessionFiltersUseMatchingEventsNotOnlySessionSummaryFields(t *testing.T
 	}
 }
 
-func TestAggregateCostIsUnavailableWhenAnyUsageHasUnknownPricing(t *testing.T) {
+func TestAggregateCostReportsPartialPricingCoverage(t *testing.T) {
 	t.Setenv("AIT_DATA_DIR", t.TempDir())
 	dbConn, err := InitDB()
 	if err != nil {
@@ -171,15 +206,18 @@ func TestAggregateCostIsUnavailableWhenAnyUsageHasUnknownPricing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if summary.CostMicros != nil {
-		t.Fatalf("mixed-price summary cost=%d, want unavailable", *summary.CostMicros)
+	if summary.CostMicros == nil || *summary.CostMicros == 0 {
+		t.Fatalf("mixed-price summary cost=%v, want priced subtotal", summary.CostMicros)
+	}
+	if summary.CostCoverage.PricedTokens != 10 || summary.CostCoverage.UnpricedTokens != 10 || summary.CostCoverage.PricedEvents != 1 || summary.CostCoverage.UnpricedEvents != 1 {
+		t.Fatalf("mixed-price coverage=%+v", summary.CostCoverage)
 	}
 	series, err := repo.Series(context.Background(), filter, "day")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(series) != 1 || series[0].CostMicros != nil {
-		t.Fatalf("mixed-price series=%+v, want unavailable cost", series)
+	if len(series) != 1 || series[0].CostMicros == nil || series[0].CostCoverage.PricedTokens != 10 || series[0].CostCoverage.UnpricedTokens != 10 {
+		t.Fatalf("mixed-price series=%+v, want priced subtotal and coverage", series)
 	}
 	page, err := repo.ListSessions(context.Background(), filter)
 	if err != nil {
@@ -195,6 +233,30 @@ func TestAggregateCostIsUnavailableWhenAnyUsageHasUnknownPricing(t *testing.T) {
 	}
 	if knownOnly.CostMicros == nil {
 		t.Fatal("known-price filtered summary cost is unavailable")
+	}
+}
+
+func TestApplyBatchPricesAutoReviewAtOccurrenceDate(t *testing.T) {
+	t.Setenv("AIT_DATA_DIR", t.TempDir())
+	dbConn, err := InitDB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = dbConn.Close() }()
+	repo := NewRepository(dbConn)
+	at := time.Date(2026, 4, 22, 0, 0, 0, 0, time.UTC)
+	s := SessionRecord{ID: "codex:dated", Agent: "codex", Provider: "openai", SourceSessionID: "dated", UpdatedAtMS: at.UnixMilli(), Measurement: coredb.MeasurementReported, SourceKind: "fixture", SourcePathHash: "safe"}
+	e := UsageEvent{ID: "dated", SessionID: s.ID, OccurredAtMS: at.UnixMilli(), Provider: "openai", Model: "codex-auto-review", Tokens: coredb.TokenCounts{InputUncached: 1_000, Total: 1_000}, Measurement: coredb.MeasurementReported, SourcePathHash: "safe", ParserVersion: "test"}
+	if _, _, err := repo.ApplyBatch(context.Background(), Batch{Session: s, Events: []UsageEvent{e}}); err != nil {
+		t.Fatal(err)
+	}
+	var cost int64
+	var version string
+	if err := dbConn.QueryRow(`SELECT cost_micros,pricing_version FROM usage_events WHERE id='dated'`).Scan(&cost, &version); err != nil {
+		t.Fatal(err)
+	}
+	if cost != 2_500 || version != pricingVersion {
+		t.Fatalf("stored cost=%d version=%q, want 2500 %q", cost, version, pricingVersion)
 	}
 }
 

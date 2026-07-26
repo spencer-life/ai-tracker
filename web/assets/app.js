@@ -48,6 +48,9 @@ function renderSummary(summary) {
   setText("sessions-count", number.format(summary.sessions || 0));
   setText("events-count", `${number.format(summary.events || 0)} events`);
   setText("cost", formatCost(summary.costMicros));
+	const c = summary.costCoverage || {};
+	const costTokens = (c.pricedTokens || 0) + (c.unpricedTokens || 0);
+	setText("cost-detail", costTokens ? `${Math.round((c.pricedTokens || 0) / costTokens * 100)}% of tokens priced · ${number.format(c.unpricedEvents || 0)} unknown-price events excluded` : "No priced token events");
   const t = summary.tokens || {};
   setText("token-detail", `Input ${number.format(t.inputUncached || 0)} · Cache read ${number.format(t.cacheRead || 0)} · Cache write ${number.format(t.cacheWrite || 0)} · Output ${number.format(t.output || 0)} · Reasoning ${number.format(t.reasoning || 0)}`);
   const q = summary.quality || {};
@@ -151,8 +154,8 @@ function renderSync(status) {
   setText("sync-state", status.status || "Unknown");
   setText("sync-started", formatDate(status.startedAt));
   setText("sync-finished", formatDate(status.finishedAt));
-  setText("sync-inserted", number.format(status.inserted || 0));
-  setText("sync-updated", number.format(status.updated || 0));
+  setText("sync-events", number.format(status.eventsCommitted || 0));
+  setText("sync-sessions", number.format(status.sessionsCommitted || 0));
   setText("sync-skipped", number.format(status.skipped || 0));
   setText("sync-errors", number.format(status.errors || 0));
   const list = $("diagnostics"); clear(list);

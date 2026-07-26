@@ -12,7 +12,7 @@ func TestScanPrivacyStatesAndShadowing(t *testing.T) {
 	home := t.TempDir()
 	repo := filepath.Join(home, "dev", "repo")
 	mustMkdir(t, filepath.Join(repo, ".git"))
-	mustMkdir(t, filepath.Join(home, ".codex", "skills", "shared"))
+	mustWrite(t, filepath.Join(home, ".codex", "skills", "shared", "SKILL.md"), "---\nname: shared\n---\n")
 	mustMkdir(t, filepath.Join(home, ".codex", "hooks", "__pycache__"))
 	mustWrite(t, filepath.Join(home, ".codex", "hooks", "active.py"), "DO-NOT-EXPOSE-HOOK-BODY")
 	mustWrite(t, filepath.Join(home, ".codex", "hooks", "metadata.jsonc"), "DO-NOT-EXPOSE-METADATA")
@@ -23,7 +23,10 @@ command = "DO-NOT-EXPOSE-COMMAND"
 [agents.reviewer]
 prompt = "DO-NOT-EXPOSE-PROMPT"
 `)
-	mustMkdir(t, filepath.Join(repo, ".codex", "skills", "shared"))
+	mustWrite(t, filepath.Join(home, ".codex", "hooks.json"), `{
+  "hooks": {"PostToolUse": [{"command": "DO-NOT-EXPOSE-HOOK-COMMAND"}]}
+}`)
+	mustWrite(t, filepath.Join(repo, ".codex", "skills", "shared", "SKILL.md"), "---\nname: shared\n---\n")
 	mustWrite(t, filepath.Join(repo, ".codex", "AGENTS.md"), "DO-NOT-EXPOSE-INSTRUCTIONS")
 	mustMkdir(t, filepath.Join(repo, ".claude"))
 	mustWrite(t, filepath.Join(repo, ".claude", "settings.json"), `{
@@ -51,6 +54,7 @@ prompt = "DO-NOT-EXPOSE-PROMPT"
 	assertComponent(t, items, ProviderClaude, "plugin", "on-plugin", StateConfiguredEnabled)
 	assertComponent(t, items, ProviderCodex, "plugin", "cached-only", StateDiscovered)
 	assertComponent(t, items, ProviderCodex, "hook", "active", StateDiscovered)
+	assertComponent(t, items, ProviderCodex, "hook", "PostToolUse", StateConfiguredEnabled)
 	for _, item := range items {
 		if item.Provider == ProviderCodex && item.Kind == "plugin" && item.DisplayName == "cache" && item.State == StateConfiguredEnabled {
 			t.Fatal("plugin cache directory reported as enabled")
@@ -77,6 +81,81 @@ prompt = "DO-NOT-EXPOSE-PROMPT"
 	}
 	if len(globalShared.ShadowedBy) != 1 || projectShared.State != StateEffectiveInferred {
 		t.Fatalf("shadowing not resolved: global=%#v project=%#v", globalShared, projectShared)
+	}
+}
+
+func TestScanWithEffectiveProviderHomes(t *testing.T) {
+	home := t.TempDir()
+	repo := filepath.Join(home, "repo")
+	mustMkdir(t, filepath.Join(repo, ".git"))
+	codexHome := t.TempDir()
+	claudeHome := t.TempDir()
+	mustWrite(t, filepath.Join(codexHome, "skills", "active-codex", "SKILL.md"), "---\nname: active-codex\n---\n")
+	mustWrite(t, filepath.Join(claudeHome, "skills", "active-claude", "SKILL.md"), "---\nname: active-claude\n---\n")
+	mustWrite(t, filepath.Join(home, ".codex", "skills", "native-archive", "SKILL.md"), "---\nname: native-archive\n---\n")
+	mustWrite(t, filepath.Join(home, ".codex", "agents", "native-file-agent.toml"), "model = \"private\"\n")
+	mustWrite(t, filepath.Join(home, ".codex", "hooks", "native-hook.py"), "PRIVATE-HOOK-BODY")
+	mustWrite(t, filepath.Join(home, ".codex", "rules", "default.rules"), "PRIVATE-RULE-BODY")
+	mustMkdir(t, filepath.Join(home, ".codex", "plugins", "cache", "native-cached-plugin"))
+	mustWrite(t, filepath.Join(home, ".codex", "config.toml"), "[agents.native-config-agent]\nprompt = \"private\"\n")
+	mustWrite(t, filepath.Join(home, ".codex", "hooks.json"), `{"hooks":{"PostToolUse":[{"command":"private"}]}}`)
+	mustWrite(t, filepath.Join(home, ".codex", "AGENTS.md"), "PRIVATE-INSTRUCTIONS")
+
+	items, err := ScanWithRoots(context.Background(), home, repo, Roots{CodexHome: codexHome, ClaudeHome: claudeHome})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertComponent(t, items, ProviderCodex, "skill", "active-codex", StateConfiguredEnabled)
+	assertComponent(t, items, ProviderClaude, "skill", "active-claude", StateConfiguredEnabled)
+	assertComponent(t, items, ProviderCodex, "skill", "native-archive", StateDiscovered)
+	assertComponent(t, items, ProviderCodex, "agent", "native-file-agent", StateDiscovered)
+	assertComponent(t, items, ProviderCodex, "agent", "native-config-agent", StateDiscovered)
+	assertComponent(t, items, ProviderCodex, "hook", "native-hook", StateDiscovered)
+	assertComponent(t, items, ProviderCodex, "hook", "PostToolUse", StateDiscovered)
+	assertComponent(t, items, ProviderCodex, "rule", "default", StateDiscovered)
+	assertComponent(t, items, ProviderCodex, "plugin", "native-cached-plugin", StateDiscovered)
+	assertComponent(t, items, ProviderCodex, "instruction", "AGENTS.md", StateDiscovered)
+	for _, item := range items {
+		if item.Provider == ProviderCodex && item.Scope == "global-native-archive" && item.State == StateConfiguredEnabled {
+			t.Fatalf("secondary native Codex component reported enabled: %#v", item)
+		}
+	}
+}
+
+func TestScanMarksInactiveClaudeDefinitionsDiscovered(t *testing.T) {
+	home := t.TempDir()
+	repo := filepath.Join(home, "repo")
+	mustMkdir(t, filepath.Join(repo, ".git"))
+	mustWrite(t, filepath.Join(home, ".claude", "agents", "active.md"), "PRIVATE-ACTIVE-BODY")
+
+	inactive := []struct {
+		kind string
+		file string
+		name string
+	}{
+		{"agent", "cli-skill-author.md.archived", "cli-skill-author"},
+		{"agent", "retired.md.disabled", "retired"},
+		{"agent", "legacy.md.bak", "legacy"},
+		{"rule", "old.rules.backup", "old"},
+		{"rule", "temporary.rules~", "temporary"},
+	}
+	for _, fixture := range inactive {
+		directory := fixture.kind + "s"
+		mustWrite(t, filepath.Join(home, ".claude", directory, fixture.file), "PRIVATE-INACTIVE-BODY")
+	}
+
+	items, err := Scan(context.Background(), home, repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertComponent(t, items, ProviderClaude, "agent", "active", StateConfiguredEnabled)
+	for _, fixture := range inactive {
+		assertComponent(t, items, ProviderClaude, fixture.kind, fixture.name, StateDiscovered)
+		for _, item := range items {
+			if item.Provider == ProviderClaude && item.Kind == fixture.kind && item.Source.Base == fixture.file && item.State == StateConfiguredEnabled {
+				t.Fatalf("inactive Claude definition reported enabled: %#v", item)
+			}
+		}
 	}
 }
 
@@ -127,6 +206,33 @@ func TestJSONMetadataCountsArraysWithoutKeepingValues(t *testing.T) {
 	if len(decls) != 1 || decls[0].kind != "hook" || decls[0].name != "PreToolUse" || decls[0].count != 2 {
 		t.Fatalf("unexpected declarations: %#v", decls)
 	}
+}
+
+func TestJSONMetadataDoesNotPromoteNestedHookFields(t *testing.T) {
+	decls, err := jsonDeclarations([]byte(`{"hooks":{"PreToolUse":[{"hooks":{"type":"command"},"command":"secret"}]}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(decls) != 1 || decls[0].kind != "hook" || decls[0].name != "PreToolUse" {
+		t.Fatalf("unexpected nested declarations: %#v", decls)
+	}
+}
+
+func TestScanFindsNestedAndSharedSkills(t *testing.T) {
+	home := t.TempDir()
+	repo := filepath.Join(home, "repo")
+	mustMkdir(t, filepath.Join(repo, ".git"))
+	mustWrite(t, filepath.Join(home, ".codex", "skills", ".system", "system-skill", "SKILL.md"), "---\nname: system-skill\n---\n")
+	mustWrite(t, filepath.Join(home, ".codex", "plugins", "cache", "vendor", "plugin", "1.0", "skills", "plugin-skill", "SKILL.md"), "---\nname: plugin-skill\n---\n")
+	mustWrite(t, filepath.Join(home, ".agents", "skills", "shared-skill", "SKILL.md"), "---\nname: shared-skill\n---\n")
+
+	items, err := Scan(context.Background(), home, repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertComponent(t, items, ProviderCodex, "skill", "system-skill", StateConfiguredEnabled)
+	assertComponent(t, items, ProviderCodex, "skill", "plugin-skill", StateDiscovered)
+	assertComponent(t, items, ProviderCodex, "skill", "shared-skill", StateConfiguredEnabled)
 }
 
 func TestScanHonorsCancellation(t *testing.T) {

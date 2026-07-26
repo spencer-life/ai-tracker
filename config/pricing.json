@@ -1,4 +1,0 @@
-{
-  "gemini-1.5-pro": {"input": 3.5, "output": 10.5},
-  "claude-3.5-sonnet": {"input": 3.0, "output": 15.0}
-}

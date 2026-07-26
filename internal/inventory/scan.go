@@ -19,7 +19,7 @@ type providerSpec struct {
 }
 
 var providers = []providerSpec{
-	{ProviderCodex, ".codex", []string{"config.toml", "settings.json"}, []string{"AGENTS.md"}},
+	{ProviderCodex, ".codex", []string{"config.toml", "settings.json", "hooks.json"}, []string{"AGENTS.md"}},
 	{ProviderClaude, ".claude", []string{"settings.json", "settings.local.json"}, []string{"CLAUDE.md"}},
 	{ProviderAgy, ".gemini", []string{"settings.json", "config.toml"}, []string{"GEMINI.md"}},
 	{ProviderAgy, ".agy", []string{"settings.json", "config.toml"}, nil},
@@ -31,7 +31,7 @@ type collector struct {
 	seen  map[string]struct{}
 }
 
-func scan(ctx context.Context, home, cwd string) ([]Component, error) {
+func scan(ctx context.Context, home, cwd string, roots Roots) ([]Component, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -46,8 +46,61 @@ func scan(ctx context.Context, home, cwd string) ([]Component, error) {
 	c := &collector{ctx: ctx, seen: make(map[string]struct{})}
 
 	for _, spec := range providers {
-		c.scanRoot(homeRoot, filepath.Join(homeRoot, spec.dir), spec, "global")
+		boundary := homeRoot
+		configRoot := filepath.Join(homeRoot, spec.dir)
+		override := ""
+		switch spec.provider {
+		case ProviderCodex:
+			override = roots.CodexHome
+		case ProviderClaude:
+			override = roots.ClaudeHome
+		}
+		if strings.TrimSpace(override) != "" {
+			resolvedOverride, rootErr := canonicalDir(override)
+			if rootErr != nil {
+				return nil, fmt.Errorf("invalid %s configuration home: %w", spec.provider, rootErr)
+			}
+			boundary, configRoot = resolvedOverride, resolvedOverride
+		}
+		c.scanRoot(boundary, configRoot, spec, "global")
+		if spec.provider == ProviderCodex {
+			c.scanSkillTree(boundary, filepath.Join(configRoot, "plugins", "cache"), spec.provider, "plugin-cache", StateDiscovered, "plugin cache skill discovered; activation not inferred")
+		}
 	}
+	// When Codex Desktop supplies a distinct Windows-backed CODEX_HOME to a WSL
+	// process, retain visibility into native ~/.codex configuration as archived
+	// discoveries without claiming it is active in the configured profile.
+	nativeCodexRoot := filepath.Join(homeRoot, ".codex")
+	if strings.TrimSpace(roots.CodexHome) != "" && filepath.Clean(roots.CodexHome) != filepath.Clean(nativeCodexRoot) {
+		for _, spec := range providers {
+			if spec.provider != ProviderCodex {
+				continue
+			}
+			for _, name := range spec.settings {
+				c.scanSettingsWithState(homeRoot, filepath.Join(nativeCodexRoot, name), ProviderCodex, "global-native-archive", StateDiscovered)
+			}
+			break
+		}
+		for _, dir := range []struct {
+			path string
+			kind string
+		}{
+			{"agents", "agent"},
+			{"hooks", "hook"},
+			{"rules", "rule"},
+			{"plugins/cache", "plugin"},
+		} {
+			scope := "global-native-archive"
+			if dir.kind == "plugin" {
+				scope = "global-native-plugin-cache"
+			}
+			c.scanNamedDirectory(homeRoot, filepath.Join(nativeCodexRoot, filepath.FromSlash(dir.path)), ProviderCodex, dir.kind, scope, StateDiscovered)
+		}
+		c.scanSkillTree(homeRoot, filepath.Join(nativeCodexRoot, "skills"), ProviderCodex, "global-native-archive", StateDiscovered, "skill found in secondary native Codex configuration archive; activation not inferred")
+		c.scanSkillTree(homeRoot, filepath.Join(nativeCodexRoot, "plugins", "cache"), ProviderCodex, "global-native-plugin-cache", StateDiscovered, "plugin cache skill found in secondary native Codex archive; activation not inferred")
+		c.scanMarkerWithState(homeRoot, filepath.Join(nativeCodexRoot, "AGENTS.md"), ProviderCodex, "global-native-archive", StateDiscovered, "instruction filename found in secondary native Codex configuration; activation not inferred")
+	}
+	c.scanSkillTree(homeRoot, filepath.Join(homeRoot, ".agents", "skills"), ProviderCodex, "global-shared", StateConfiguredEnabled, "shared agent skill definition present")
 	ancestry := repositoryAncestry(cwdRoot, homeRoot)
 	for i, root := range ancestry {
 		scope := "repository"
@@ -136,7 +189,6 @@ func (c *collector) scanRoot(boundary, configRoot string, spec providerSpec, sco
 		path, kind string
 		state      State
 	}{
-		{"skills", "skill", StateConfiguredEnabled},
 		{"agents", "agent", StateConfiguredEnabled},
 		// Hook directories often contain helpers, caches, and retired scripts.
 		// Presence is useful inventory, but activation must come from settings.
@@ -147,12 +199,64 @@ func (c *collector) scanRoot(boundary, configRoot string, spec providerSpec, sco
 	} {
 		c.scanNamedDirectory(resolved, filepath.Join(resolved, filepath.FromSlash(dir.path)), spec.provider, dir.kind, scope, dir.state)
 	}
+	c.scanSkillTree(resolved, filepath.Join(resolved, "skills"), spec.provider, scope, StateConfiguredEnabled, "skill definition present in configured component directory")
 	for _, marker := range spec.markers {
 		c.scanMarker(resolved, filepath.Join(resolved, marker), spec.provider, scope)
 	}
 }
 
+func (c *collector) scanSkillTree(root, path, provider, scope string, state State, provenance string) {
+	resolved, info, err := resolveInside(root, path)
+	if errors.Is(err, os.ErrNotExist) {
+		return
+	}
+	if err != nil {
+		if _, lerr := os.Lstat(path); lerr == nil {
+			c.broken(provider, "skill", path, scope, diagnostic(err))
+		}
+		return
+	}
+	if !info.IsDir() {
+		c.brokenAt(provider, "skill", path, scope, info.ModTime(), "skill root is not a directory")
+		return
+	}
+	count := 0
+	_ = filepath.WalkDir(resolved, func(candidate string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil || c.ctx.Err() != nil {
+			return filepath.SkipDir
+		}
+		relative, relErr := filepath.Rel(resolved, candidate)
+		if relErr != nil {
+			return filepath.SkipDir
+		}
+		if entry.IsDir() {
+			if relative != "." && len(strings.Split(filepath.ToSlash(relative), "/")) > 8 {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if entry.Type()&os.ModeSymlink != 0 || !entry.Type().IsRegular() || !strings.EqualFold(entry.Name(), "SKILL.md") {
+			return nil
+		}
+		if count >= maxEntries {
+			return filepath.SkipAll
+		}
+		resolvedSkill, skillInfo, resolveErr := resolveInside(root, candidate)
+		if resolveErr != nil {
+			c.broken(provider, "skill", candidate, scope, diagnostic(resolveErr))
+			return nil
+		}
+		count++
+		c.add(Component{Provider: provider, Kind: "skill", DisplayName: filepath.Base(filepath.Dir(resolvedSkill)), Source: safeSource(resolvedSkill), Scope: scope, State: state, Provenance: provenance, LastObserved: skillInfo.ModTime()})
+		return nil
+	})
+}
+
 func (c *collector) scanSettings(root, path, provider, scope string) {
+	c.scanSettingsWithState(root, path, provider, scope, "")
+}
+
+func (c *collector) scanSettingsWithState(root, path, provider, scope string, stateOverride State) {
 	data, info, err := readMetadata(root, path)
 	if errors.Is(err, os.ErrNotExist) {
 		return
@@ -179,8 +283,16 @@ func (c *collector) scanSettings(root, path, provider, scope string) {
 			state = StateConfiguredDisabled
 		}
 		provenance := "declared in configuration metadata"
+		if stateOverride != "" {
+			state = stateOverride
+			provenance = "declared in secondary configuration metadata; activation not inferred"
+		}
 		if d.count > 0 {
-			provenance = fmt.Sprintf("declared collection with %d entries", d.count)
+			if stateOverride != "" {
+				provenance = fmt.Sprintf("secondary configuration declares collection with %d entries; activation not inferred", d.count)
+			} else {
+				provenance = fmt.Sprintf("declared collection with %d entries", d.count)
+			}
 		}
 		c.add(Component{Provider: provider, Kind: d.kind, DisplayName: d.name, Source: safeSource(path), Scope: scope, State: state, Provenance: provenance, LastObserved: info.ModTime()})
 	}
@@ -239,9 +351,43 @@ func (c *collector) scanNamedDirectory(root, path, provider, kind, scope string,
 				continue
 			}
 		}
-		display := strings.TrimSuffix(name, filepath.Ext(name))
-		c.add(Component{Provider: provider, Kind: kind, DisplayName: display, Source: safeSource(resolvedChild), Scope: scope, State: state, Provenance: directoryProvenance(kind, state), LastObserved: childInfo.ModTime()})
+		itemState := state
+		provenance := directoryProvenance(kind, state)
+		displayName := name
+		if (kind == "agent" || kind == "rule") && inactiveDefinition(name) {
+			itemState = StateDiscovered
+			provenance = "archived, backup, or disabled definition discovered; activation not inferred"
+			displayName = trimInactiveSuffix(displayName)
+		}
+		display := strings.TrimSuffix(displayName, filepath.Ext(displayName))
+		c.add(Component{Provider: provider, Kind: kind, DisplayName: display, Source: safeSource(resolvedChild), Scope: scope, State: itemState, Provenance: provenance, LastObserved: childInfo.ModTime()})
 	}
+}
+
+func inactiveDefinition(name string) bool {
+	lower := strings.ToLower(name)
+	if strings.HasSuffix(lower, "~") {
+		return true
+	}
+	for _, suffix := range []string{".archived", ".disabled", ".bak", ".backup"} {
+		if strings.HasSuffix(lower, suffix) {
+			return true
+		}
+	}
+	return false
+}
+
+func trimInactiveSuffix(name string) string {
+	if strings.HasSuffix(name, "~") {
+		return strings.TrimSuffix(name, "~")
+	}
+	lower := strings.ToLower(name)
+	for _, suffix := range []string{".archived", ".disabled", ".bak", ".backup"} {
+		if strings.HasSuffix(lower, suffix) {
+			return name[:len(name)-len(suffix)]
+		}
+	}
+	return name
 }
 
 func directoryProvenance(kind string, state State) string {
@@ -249,12 +395,19 @@ func directoryProvenance(kind string, state State) string {
 		if kind == "hook" {
 			return "hook-directory script discovered; activation not inferred"
 		}
-		return "cache presence only; installation and enablement not inferred"
+		if kind == "plugin" {
+			return "cache presence only; installation and enablement not inferred"
+		}
+		return "definition discovered in a secondary component directory; activation not inferred"
 	}
 	return "definition present in configured component directory"
 }
 
 func (c *collector) scanMarker(root, path, provider, scope string) {
+	c.scanMarkerWithState(root, path, provider, scope, StateEffectiveInferred, "instruction filename observed; body not read")
+}
+
+func (c *collector) scanMarkerWithState(root, path, provider, scope string, state State, provenance string) {
 	resolved, info, err := resolveInside(root, path)
 	if errors.Is(err, os.ErrNotExist) {
 		return
@@ -269,7 +422,7 @@ func (c *collector) scanMarker(root, path, provider, scope string) {
 		c.brokenAt(provider, "instruction", path, scope, info.ModTime(), "instruction source is not a regular file")
 		return
 	}
-	c.add(Component{Provider: provider, Kind: "instruction", DisplayName: filepath.Base(path), Source: safeSource(resolved), Scope: scope, State: StateEffectiveInferred, Provenance: "instruction filename observed; body not read", LastObserved: info.ModTime()})
+	c.add(Component{Provider: provider, Kind: "instruction", DisplayName: filepath.Base(path), Source: safeSource(resolved), Scope: scope, State: state, Provenance: provenance, LastObserved: info.ModTime()})
 }
 
 func (c *collector) broken(provider, kind, path, scope, message string) {
