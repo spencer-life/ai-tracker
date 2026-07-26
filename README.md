@@ -63,7 +63,7 @@ flowchart TD
   A["Codex · Claude · agy<br/>local records"]
   B["ait sync"]
   C[("Private local SQLite")]
-  D["Views<br/>dashboard<br/>TUI · reports<br/>exports"]
+  D["Views"]
   A --> B --> C --> D
 ```
 
@@ -111,7 +111,7 @@ flowchart TD
   B["Quality label"]
   C["Token buckets<br/>input · cache · output"]
   D["Model + date pricing"]
-  E["API cost<br/>estimate<br/>coverage shown"]
+  E["Cost<br/>coverage"]
   A --> B --> C --> D --> E
 ```
 
