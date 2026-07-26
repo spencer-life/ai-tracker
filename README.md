@@ -17,9 +17,9 @@ Choose whichever method fits your setup.
 Recommended if you already use [mise](https://mise.jdx.dev):
 
 ```bash
-project=spencer-life/ai-tracker
+repo=spencer-life/ai-tracker
 mise use -g \
-  "github:$project@latest"
+  "github:$repo@latest"
 mise reshim
 ait version
 ```
@@ -29,9 +29,9 @@ ait version
 With Go 1.26.5 or newer:
 
 ```bash
-project=spencer-life/ai-tracker
+repo=spencer-life/ai-tracker
 go install \
-  "github.com/$project@latest"
+  "github.com/$repo@latest"
 ai-tracker version
 ```
 
@@ -63,7 +63,7 @@ flowchart TD
   A["Codex · Claude · agy<br/>local records"]
   B["ait sync"]
   C[("Private local SQLite")]
-  D["Views<br/>dashboard · TUI<br/>reports · exports"]
+  D["Views<br/>dashboard<br/>TUI · reports<br/>exports"]
   A --> B --> C --> D
 ```
 
@@ -111,7 +111,7 @@ flowchart TD
   B["Quality label"]
   C["Token buckets<br/>input · cache · output"]
   D["Model + date pricing"]
-  E["API-equivalent<br/>cost + coverage"]
+  E["API cost<br/>estimate<br/>coverage shown"]
   A --> B --> C --> D --> E
 ```
 
@@ -207,20 +207,20 @@ Run `ait <command> --help` for the complete command surface.
 Update:
 
 ```bash
-project=spencer-life/ai-tracker
+repo=spencer-life/ai-tracker
 mise upgrade \
-  "github:$project"
+  "github:$repo"
 mise reshim
 ```
 
 Remove:
 
 ```bash
-project=spencer-life/ai-tracker
+repo=spencer-life/ai-tracker
 mise use -g --remove \
-  "github:$project"
+  "github:$repo"
 mise uninstall \
-  "github:$project"
+  "github:$repo"
 ```
 
 </details>
