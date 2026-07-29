@@ -1,129 +1,184 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="color-scheme" content="dark light">
-  <title>AI Tracker</title>
-  <link rel="stylesheet" href="/assets/app.css">
-  <script src="/assets/app.js" defer></script>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<meta name="color-scheme" content="light dark">
+	<title>AI Tracker</title>
+	<link rel="stylesheet" href="/assets/app.css">
+	<script src="/assets/app.js" defer></script>
 </head>
 <body>
-  <a class="skip-link" href="#content">Skip to content</a>
-  <header class="site-header">
-    <div>
-      <p class="eyebrow">Local usage analytics</p>
-      <h1>AI Tracker</h1>
-    </div>
-    <div class="header-actions">
-      <span id="freshness" class="status" aria-live="polite">Loading data…</span>
-      <button id="sync" type="button">Sync sources</button>
-    </div>
-  </header>
+	<a class="skip-link" href="#content">Skip to content</a>
+	<header class="site-header">
+		<div class="brand-lockup">
+			<span class="brand-mark" aria-hidden="true"></span>
+			<div>
+				<p class="eyebrow">Local usage ledger</p>
+				<h1>AI Tracker</h1>
+			</div>
+		</div>
+		<div class="header-actions">
+			<span id="freshness" class="status" aria-live="polite">Loading data…</span>
+			<label class="theme-control" for="theme">
+				<span>Theme</span>
+				<select id="theme" aria-label="Color theme">
+					<option value="system">System</option>
+					<option value="light">Light</option>
+					<option value="dark">Dark</option>
+				</select>
+			</label>
+			<button id="sync" type="button">Sync sources</button>
+		</div>
+	</header>
 
-  <main id="content">
-    <section class="panel filters" aria-labelledby="filter-heading">
-      <div class="section-heading">
-        <div>
-          <p id="quality-mode" class="eyebrow">Reported and derived data</p>
-          <h2 id="filter-heading">Usage window</h2>
-        </div>
-        <button id="refresh" class="secondary" type="button">Refresh</button>
-      </div>
-      <form id="filters">
-        <label>Range
-          <select id="range" name="range">
-            <option value="today">Today</option>
-            <option value="7d">Last 7 days</option>
-            <option value="30d" selected>Last 30 days</option>
-            <option value="mtd">Month to date</option>
-            <option value="custom">Custom</option>
-          </select>
-        </label>
-        <label>From <input id="from" name="from" type="date" disabled></label>
-        <label>To (exclusive) <input id="to" name="to" type="date" disabled></label>
-        <label>Timezone <input id="tz" name="tz" value="UTC" autocomplete="off"></label>
-        <label>Provider <input name="provider" placeholder="All providers" autocomplete="off"></label>
-        <label>Agent <input name="agent" placeholder="All agents" autocomplete="off"></label>
-        <label>Model <input name="model" placeholder="All models" autocomplete="off"></label>
-        <label>Quality
-          <select name="quality">
-            <option value="">All measured</option>
-            <option value="reported">Reported</option>
-            <option value="derived">Derived</option>
-            <option value="estimated">Estimated</option>
-            <option value="legacy">Legacy</option>
-          </select>
-        </label>
-        <label class="check"><input name="includeEstimates" type="checkbox"> Include estimates</label>
-        <button type="submit">Apply filters</button>
-      </form>
-    </section>
+	<main id="content">
+		<div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
 
-    <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
+		<section class="usage-overview" aria-labelledby="overview-heading">
+			<div class="section-heading overview-heading">
+				<div>
+					<p class="eyebrow">Overview</p>
+					<h2 id="overview-heading">Usage totals</h2>
+				</div>
+				<p id="range-label" class="period-label"></p>
+			</div>
+			<div class="overview-ledger">
+				<article class="hero-total">
+					<div class="hero-kicker">
+						<span class="live-dot" aria-hidden="true"></span>
+						<p id="quality-mode">Reported and derived data</p>
+					</div>
+					<p class="metric-label">Tracked tokens</p>
+					<strong id="tokens">—</strong>
+					<small id="token-detail">Input, cache, output and reasoning</small>
+				</article>
+				<div class="supporting-kpis">
+					<article>
+						<p class="metric-label">Sessions</p>
+						<strong id="sessions-count">—</strong>
+						<small id="events-count">— events</small>
+					</article>
+					<article>
+						<p class="metric-label">API-equivalent cost</p>
+						<strong id="cost">—</strong>
+						<small id="cost-detail">Unknown models are excluded and shown as coverage</small>
+					</article>
+					<article>
+						<p class="metric-label">Measurement coverage</p>
+						<strong id="coverage">—</strong>
+						<small id="coverage-detail">Reported, derived, estimated, legacy</small>
+					</article>
+				</div>
+			</div>
+		</section>
 
-    <section aria-labelledby="overview-heading">
-      <div class="section-heading">
-        <div><p class="eyebrow">Overview</p><h2 id="overview-heading">Usage totals</h2></div>
-        <p id="range-label" class="muted"></p>
-      </div>
-      <div class="kpis">
-        <article class="panel"><p>Tokens</p><strong id="tokens">—</strong><small id="token-detail">Input, cache, output and reasoning</small></article>
-        <article class="panel"><p>Sessions</p><strong id="sessions-count">—</strong><small id="events-count">— events</small></article>
-        <article class="panel"><p>Standard API-equivalent cost</p><strong id="cost">—</strong><small id="cost-detail">Unknown models are excluded and shown as coverage</small></article>
-        <article class="panel"><p>Measurement coverage</p><strong id="coverage">—</strong><small id="coverage-detail">Reported, derived, estimated, legacy</small></article>
-      </div>
-    </section>
+		<section class="panel filters" aria-labelledby="filter-heading">
+			<div class="section-heading">
+				<div>
+					<p class="eyebrow">Scope</p>
+					<h2 id="filter-heading">Usage window</h2>
+				</div>
+				<button id="refresh" class="secondary" type="button">Refresh data</button>
+			</div>
+			<form id="filters">
+				<label>Range
+					<select id="range" name="range">
+						<option value="today">Today</option>
+						<option value="7d">Last 7 days</option>
+						<option value="30d" selected>Last 30 days</option>
+						<option value="mtd">Month to date</option>
+						<option value="custom">Custom</option>
+					</select>
+				</label>
+				<label>From <input id="from" name="from" type="date" disabled></label>
+				<label>To (exclusive) <input id="to" name="to" type="date" disabled></label>
+				<label>Timezone <input id="tz" name="tz" value="UTC" autocomplete="off"></label>
+				<label>Provider <input name="provider" placeholder="All providers" autocomplete="off"></label>
+				<label>Agent <input name="agent" placeholder="All agents" autocomplete="off"></label>
+				<label>Model <input name="model" placeholder="All models" autocomplete="off"></label>
+				<label>Quality
+					<select name="quality">
+						<option value="">All measured</option>
+						<option value="reported">Reported</option>
+						<option value="derived">Derived</option>
+						<option value="estimated">Estimated</option>
+						<option value="legacy">Legacy</option>
+					</select>
+				</label>
+				<label class="check"><input name="includeEstimates" type="checkbox"> Include estimates</label>
+				<button class="apply-filters" type="submit">Apply filters</button>
+			</form>
+		</section>
 
-    <section class="panel" aria-labelledby="trend-heading">
-      <div class="section-heading">
-        <div><p class="eyebrow">Trend</p><h2 id="trend-heading">Daily tokens</h2></div>
-        <p class="muted">Daily buckets in the selected timezone</p>
-      </div>
-      <div id="chart-empty" class="empty" hidden>No usage in this range.</div>
-      <svg id="chart" class="chart" viewBox="0 0 900 280" role="img" aria-labelledby="chart-title chart-desc">
-        <title id="chart-title">Daily token usage</title>
-        <desc id="chart-desc">Token totals over the selected date range.</desc>
-      </svg>
-      <details>
-        <summary>View chart as a table</summary>
-        <div class="table-wrap"><table><thead><tr><th>Date</th><th>Tokens</th><th>Sessions</th><th>Cost</th></tr></thead><tbody id="series-table"></tbody></table></div>
-      </details>
-    </section>
+		<section class="panel trend-panel" aria-labelledby="trend-heading">
+			<div class="section-heading">
+				<div>
+					<p class="eyebrow">Trend</p>
+					<h2 id="trend-heading">Daily tokens</h2>
+				</div>
+				<p class="muted">Daily buckets in the selected timezone</p>
+			</div>
+			<div id="chart-empty" class="empty" hidden>No usage in this range.</div>
+			<svg id="chart" class="chart" viewBox="0 0 900 280" role="img" aria-labelledby="chart-title chart-desc">
+				<title id="chart-title">Daily token usage</title>
+				<desc id="chart-desc">Token totals over the selected date range.</desc>
+			</svg>
+			<details>
+				<summary>View chart as a table</summary>
+				<div class="table-wrap"><table><thead><tr><th>Date</th><th>Tokens</th><th>Sessions</th><th>Cost</th></tr></thead><tbody id="series-table"></tbody></table></div>
+			</details>
+		</section>
 
-    <div class="two-column">
-      <section class="panel" aria-labelledby="sessions-heading">
-        <div class="section-heading"><div><p class="eyebrow">Recent activity</p><h2 id="sessions-heading">Sessions</h2></div></div>
-        <div class="table-wrap"><table><thead><tr><th>Updated</th><th>Agent</th><th>Model</th><th>Tokens</th><th>Quality</th></tr></thead><tbody id="session-table"></tbody></table></div>
-        <p id="sessions-empty" class="empty" hidden>No sessions match these filters.</p>
-        <button id="more" class="secondary" type="button" hidden>Load more</button>
-      </section>
+		<div class="two-column">
+			<section class="panel sessions-panel" aria-labelledby="sessions-heading">
+				<div class="section-heading"><div><p class="eyebrow">Recent activity</p><h2 id="sessions-heading">Sessions</h2></div></div>
+				<div class="table-wrap" role="region" tabindex="0" aria-label="Scrollable session records"><table><thead><tr><th>Updated</th><th>Agent</th><th>Model</th><th>Tokens</th><th>Quality</th></tr></thead><tbody id="session-table"></tbody></table></div>
+				<p id="sessions-empty" class="empty" hidden>No sessions match these filters.</p>
+				<button id="more" class="secondary" type="button" hidden>Load more</button>
+			</section>
 
-      <section class="panel" aria-labelledby="breakdown-heading">
-        <div class="section-heading">
-          <div><p class="eyebrow">Composition</p><h2 id="breakdown-heading">Breakdown</h2></div>
-          <label>Group by
-            <select id="dimension"><option value="provider">Provider</option><option value="agent">Agent</option><option value="model">Model</option><option value="project">Project</option><option value="quality">Quality</option></select>
-          </label>
-        </div>
-        <ul id="breakdown" class="breakdown"></ul>
-        <p id="breakdown-empty" class="empty" hidden>No breakdown data in this range.</p>
-      </section>
-    </div>
+			<section class="panel breakdown-panel" aria-labelledby="breakdown-heading">
+				<div class="section-heading">
+					<div><p class="eyebrow">Composition</p><h2 id="breakdown-heading">Breakdown</h2></div>
+					<label class="dimension-control">Group by
+						<select id="dimension"><option value="provider">Provider</option><option value="agent">Agent</option><option value="model">Model</option><option value="project">Project</option><option value="quality">Quality</option></select>
+					</label>
+				</div>
+				<ul id="breakdown" class="breakdown"></ul>
+				<p id="breakdown-empty" class="empty" hidden>No breakdown data in this range.</p>
+			</section>
+		</div>
 
-    <section class="panel" aria-labelledby="health-heading">
-      <div class="section-heading"><div><p class="eyebrow">Data health</p><h2 id="health-heading">Last sync</h2></div><strong id="sync-state">—</strong></div>
-      <dl class="health"><div><dt>Started</dt><dd id="sync-started">—</dd></div><div><dt>Finished</dt><dd id="sync-finished">—</dd></div><div><dt>Events committed</dt><dd id="sync-events">—</dd></div><div><dt>Sessions committed</dt><dd id="sync-sessions">—</dd></div><div><dt>Sources skipped</dt><dd id="sync-skipped">—</dd></div><div><dt>Source errors</dt><dd id="sync-errors">—</dd></div></dl>
-      <ul id="diagnostics" class="diagnostics"></ul>
-    </section>
+		<section class="panel health-panel" aria-labelledby="health-heading">
+			<div class="section-heading">
+				<div><p class="eyebrow">Data health</p><h2 id="health-heading">Last sync</h2></div>
+				<strong id="sync-state" class="sync-state">—</strong>
+			</div>
+			<dl class="health">
+				<div><dt>Started</dt><dd id="sync-started">—</dd></div>
+				<div><dt>Finished</dt><dd id="sync-finished">—</dd></div>
+				<div><dt>Events committed</dt><dd id="sync-events">—</dd></div>
+				<div><dt>Sessions committed</dt><dd id="sync-sessions">—</dd></div>
+				<div><dt>Sources skipped</dt><dd id="sync-skipped">—</dd></div>
+				<div><dt>Source errors</dt><dd id="sync-errors">—</dd></div>
+			</dl>
+			<ul id="diagnostics" class="diagnostics"></ul>
+		</section>
 
-    <section class="panel" aria-labelledby="inventory-heading">
-      <div class="section-heading"><div><p class="eyebrow">Customizations</p><h2 id="inventory-heading">Skills, hooks, agents, plugins, and rules</h2></div><span class="muted">Global + current repository · metadata only</span></div>
-      <div class="table-wrap"><table><thead><tr><th>Provider</th><th>Kind</th><th>Name</th><th>Scope</th><th>State</th></tr></thead><tbody id="inventory-table"></tbody></table></div>
-      <p id="inventory-empty" class="empty" hidden>No supported customizations were discovered.</p>
-    </section>
-  </main>
+		<section class="panel inventory-panel" aria-labelledby="inventory-heading">
+			<div class="section-heading">
+				<div><p class="eyebrow">Customizations</p><h2 id="inventory-heading">Skills, hooks, agents, plugins, and rules</h2></div>
+				<span class="muted">Global + current repository · metadata only</span>
+			</div>
+			<div class="table-wrap" role="region" tabindex="0" aria-label="Scrollable customization inventory"><table><thead><tr><th>Provider</th><th>Kind</th><th>Name</th><th>Scope</th><th>State</th></tr></thead><tbody id="inventory-table"></tbody></table></div>
+			<p id="inventory-empty" class="empty" hidden>No supported customizations were discovered.</p>
+		</section>
+	</main>
 
-  <footer>Local-only dashboard · Values reflect available source records and their measurement quality.</footer>
+	<footer>
+		<span>AI Tracker</span>
+		<span>Local-only analytics · Values reflect available source records and measurement quality.</span>
+	</footer>
 </body>
 </html>

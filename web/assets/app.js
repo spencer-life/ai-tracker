@@ -1,5 +1,33 @@
 "use strict";
 
+const themeStorageKey = "ait-theme";
+const validThemes = new Set(["system", "light", "dark"]);
+
+function readTheme() {
+  try {
+    const theme = window.localStorage.getItem(themeStorageKey);
+    return validThemes.has(theme) ? theme : "system";
+  } catch (_) {
+    return "system";
+  }
+}
+
+function applyTheme(theme) {
+  if (theme === "light" || theme === "dark") {
+    document.documentElement.dataset.theme = theme;
+  } else {
+    delete document.documentElement.dataset.theme;
+  }
+}
+
+function saveTheme(theme) {
+  applyTheme(theme);
+  try { window.localStorage.setItem(themeStorageKey, theme); } catch (_) { /* Storage may be unavailable. */ }
+}
+
+const initialTheme = readTheme();
+applyTheme(initialTheme);
+
 const state = { query: "", cursor: "", loading: false };
 const $ = (id) => document.getElementById(id);
 const number = new Intl.NumberFormat();
@@ -76,8 +104,8 @@ function renderSeries(payload) {
   clear($("series-table"));
   $("chart-empty").hidden = points.length !== 0;
   svg.hidden = points.length === 0;
-  const title = svgElement("title"); title.textContent = "Daily token usage"; svg.appendChild(title);
-  const desc = svgElement("desc"); desc.textContent = "Token totals over the selected date range."; svg.appendChild(desc);
+  const title = svgElement("title", { id: "chart-title" }); title.textContent = "Daily token usage"; svg.appendChild(title);
+  const desc = svgElement("desc", { id: "chart-desc" }); desc.textContent = "Token totals over the selected date range."; svg.appendChild(desc);
   for (const point of points) {
     const row = document.createElement("tr");
     [dateOnly.format(new Date(point.start)), number.format(tokenTotal(point.tokens)), number.format(point.sessions || 0), formatCost(point.costMicros)].forEach((value) => {
@@ -89,11 +117,6 @@ function renderSeries(payload) {
   const width = 900, height = 280, left = 54, right = 16, top = 16, bottom = 38;
   const chartW = width - left - right, chartH = height - top - bottom;
   const max = Math.max(1, ...points.map((p) => tokenTotal(p.tokens)));
-  const defs = svgElement("defs");
-  const gradient = svgElement("linearGradient", { id: "area-fill", x1: "0", y1: "0", x2: "0", y2: "1" });
-  gradient.appendChild(svgElement("stop", { offset: "0%", "stop-color": "var(--accent)", "stop-opacity": ".38" }));
-  gradient.appendChild(svgElement("stop", { offset: "100%", "stop-color": "var(--accent)", "stop-opacity": "0" }));
-  defs.appendChild(gradient); svg.appendChild(defs);
   for (let i = 0; i <= 4; i++) {
     const y = top + chartH * i / 4;
     svg.appendChild(svgElement("line", { class: "grid", x1: left, y1: y, x2: width - right, y2: y }));
@@ -199,6 +222,8 @@ async function runSync() {
 $("filters").addEventListener("submit", (event) => { event.preventDefault(); loadAll(); });
 $("refresh").addEventListener("click", loadAll);
 $("sync").addEventListener("click", runSync);
+$("theme").value = initialTheme;
+$("theme").addEventListener("change", () => saveTheme($("theme").value));
 $("range").addEventListener("change", () => { const custom = $("range").value === "custom"; $("from").disabled = !custom; $("to").disabled = !custom; });
 $("dimension").addEventListener("change", async () => {
   try { renderBreakdown(await api(`/api/v2/breakdowns?dimension=${encodeURIComponent($("dimension").value)}&${state.query || buildQuery()}`)); }

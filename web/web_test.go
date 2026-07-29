@@ -247,9 +247,13 @@ func TestDashboardIsSelfContainedAndTruthful(t *testing.T) {
 			t.Errorf("dashboard contains forbidden placeholder/dependency %q", forbidden)
 		}
 	}
-	for _, expected := range []string{"Daily tokens", "Measurement coverage", "/assets/app.js"} {
+	for _, expected := range []string{"Daily tokens", "Measurement coverage", `id="theme"`, "System", "Light", "Dark", "/assets/app.js"} {
 		if !strings.Contains(body, expected) {
 			t.Errorf("dashboard missing %q", expected)
 		}
+	}
+	asset := request(t, newHandler(&fakeRepository{}, nil), http.MethodGet, "/assets/app.js")
+	if asset.Code != http.StatusOK || !strings.Contains(asset.Body.String(), "localStorage") || !strings.Contains(asset.Body.String(), "dataset.theme") {
+		t.Fatalf("dashboard theme persistence is missing from app.js")
 	}
 }

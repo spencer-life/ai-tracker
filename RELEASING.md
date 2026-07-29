@@ -20,13 +20,13 @@ Releases are built by GitHub Actions from an annotated `v*` tag. The workflow te
    ```
 
 4. Verify at least one snapshot archive against `checksums.txt`, then extract it and run both `ait version` and `ai-tracker version`.
-5. Commit and push `main`, create an annotated tag such as `v1.1.1`, and push the tag.
+5. Commit and push `main`, create an annotated semantic-version tag such as `vX.Y.Z`, and push the tag.
 6. Watch the `Release` workflow until both `verify` and `release` succeed.
 7. Verify the published `checksums.txt`, Linux and macOS archives, release notes, and embedded version.
 8. Test a clean managed install:
 
    ```bash
-   mise use -g github:spencer-life/ai-tracker@v1.1.1
+   mise use -g github:spencer-life/ai-tracker@vX.Y.Z
    mise reshim
    mise which ait
    mise which ai-tracker

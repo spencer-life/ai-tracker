@@ -20,7 +20,7 @@ var dashboardNoSync bool
 
 var dashboardCmd = &cobra.Command{
 	Use:   "dashboard",
-	Short: "Start the embedded AI Tracker Catppuccin Web Dashboard",
+	Short: "Start the embedded AI Tracker web dashboard",
 	Run: func(cmd *cobra.Command, args []string) {
 		dbConn, err := ingest.InitDB()
 		if err != nil {
@@ -38,7 +38,7 @@ var dashboardCmd = &cobra.Command{
 		}
 		addr := dashboardHost + ":" + dashboardPort
 		url := "http://" + addr
-		fmt.Printf("⚡ AI Tracker Telemetry Dashboard (Catppuccin Frappe)\n")
+		fmt.Printf("⚡ AI Tracker Usage Dashboard\n")
 		fmt.Printf("🌐 Embedded Web Interface: %s/\n", url)
 		fmt.Printf("📡 Live update stream: http://%s/api/v2/events\n", addr)
 

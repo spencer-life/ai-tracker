@@ -55,6 +55,7 @@ ait dashboard
 ```
 
 The browser opens at `http://127.0.0.1:8080`. It stays loopback-only because it has no authentication.
+The dashboard follows the system color scheme by default and remembers an explicit System, Light, or Dark selection in the browser.
 
 ## How it works
 
@@ -71,7 +72,7 @@ The source records remain authoritative. AI Tracker stores normalized telemetry 
 
 ## Common commands
 
-- **Browser dashboard:** `ait dashboard`
+- **Browser dashboard:** `ait dashboard` with persistent System, Light, and Dark themes
 - **Terminal dashboard:** `ait tui`
 - **30-day summary:** `ait usage --range 30d`
 - **Recent Codex sessions:** `ait sessions --range 30d --agent codex`
