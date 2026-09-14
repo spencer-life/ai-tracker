@@ -5,32 +5,33 @@ on:
     tags:
       - 'v*'
 
-permissions:
-  contents: read
+permissions: {}
 
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  secretlint:
+  secrets:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    permissions:
+      contents: read
     steps:
-      - name: Checkout
+      - name: Checkout full history
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
+          fetch-depth: 0
           persist-credentials: false
-
-      - name: Scan tracked files with Secretlint v13.0.4
-        run: >-
-          docker run --rm --volume "$GITHUB_WORKSPACE:/work:ro" --workdir /work
-          secretlint/secretlint@sha256:3b3f8d2ea61ab21ce1f8185d69e7cad12e040fa5370d8f5462dd366fd24ef765
-          secretlint --format github --no-gitignore "**/*"
+      - uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    permissions:
+      contents: read
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -81,7 +82,7 @@ jobs:
         run: scripts/verify-release-archives.sh dist
 
   release:
-    needs: [secretlint, verify]
+    needs: [secrets, verify]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
